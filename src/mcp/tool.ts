@@ -37,7 +37,8 @@ export function defineTool<S extends z.ZodObject>(def: ToolDefinition<S>): Tool 
     name: def.name,
     purpose: def.purpose,
     description: def.description,
-    inputJsonSchema: z.toJSONSchema(strictInput) as Record<string, unknown>,
+    // draft-7 for the widest MCP client compatibility (Claude Code rejects 2020-12).
+    inputJsonSchema: z.toJSONSchema(strictInput, { target: 'draft-7' }) as Record<string, unknown>,
     async run(ctx, rawInput) {
       const parsed = strictInput.safeParse(rawInput ?? {});
       if (!parsed.success) {

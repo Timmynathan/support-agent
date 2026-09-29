@@ -70,16 +70,17 @@ export const createEscalation = defineTool({
       .single();
 
     if (insert.error?.code === UNIQUE_VIOLATION) {
-      const existing = await openEscalationFor(ctx);
+      const { row, filled } = await fillOpenEscalation(ctx, customer.customerId, contact, args.preferred_time ?? null);
       return {
         status: 'ok',
         result: {
           ok: true,
-          escalation_id: existing.escalation_id,
-          status: existing.status,
+          escalation_id: row.escalation_id,
+          status: row.status,
           already_existed: true,
-          follow_up_summary: followUpSummary(existing),
+          follow_up_summary: followUpSummary(row),
         },
+        logSummary: { escalation_id: row.escalation_id, already_existed: true, filled_fields: filled },
       };
     }
     const escalation = mustRow(insert) as EscalationSummaryRow;
@@ -151,6 +152,9 @@ interface EscalationSummaryRow {
   preferred_time: string | null;
   user_name: string | null;
   user_email: string | null;
+  customer_id?: string | null;
+  contact_source?: Contact['contact_source'];
+  contact_missing_reason?: string | null;
 }
 
 // Built in code so the spoken confirmation never promises a timeline or outcome
@@ -171,11 +175,47 @@ async function ticketBelongsToConversation(ctx: ToolContext, ticketId: string): 
   return row !== null;
 }
 
+// A retry of create_escalation (a repeated webhook, or the caller giving their details after an
+// earlier attempt) must not create a second escalation — but it must not drop what the caller
+// just said either. Only fields the open escalation is MISSING are filled; nothing already
+// recorded is overwritten.
+async function fillOpenEscalation(
+  ctx: ToolContext,
+  customerId: string | null,
+  contact: Contact,
+  preferredTime: string | null,
+): Promise<{ row: EscalationSummaryRow; filled: string[] }> {
+  const existing = await openEscalationFor(ctx);
+  const patch: Record<string, unknown> = {};
+  if (!existing.customer_id && customerId) patch.customer_id = customerId;
+  if (!existing.user_name && contact.user_name) patch.user_name = contact.user_name;
+  if (!existing.user_email && contact.user_email) patch.user_email = contact.user_email;
+  if (!existing.preferred_time && preferredTime) Object.assign(patch, { preferred_time: preferredTime, call_booked: true });
+  const filled = Object.keys(patch);
+  if (filled.length === 0) return { row: existing, filled };
+
+  const name = (patch.user_name as string | undefined) ?? existing.user_name;
+  const email = (patch.user_email as string | undefined) ?? existing.user_email;
+  if (existing.contact_source === 'none' && (patch.user_name || patch.user_email)) patch.contact_source = contact.contact_source;
+  patch.contact_missing_reason = name && email ? null : contact.contact_missing_reason ?? existing.contact_missing_reason;
+  patch.updated_at = new Date().toISOString();
+
+  const row = mustRow(
+    await db()
+      .from('escalations')
+      .update(patch)
+      .eq('escalation_id', existing.escalation_id)
+      .select('escalation_id, status, preferred_time, user_name, user_email, customer_id, contact_source, contact_missing_reason')
+      .single(),
+  ) as EscalationSummaryRow;
+  return { row, filled };
+}
+
 async function openEscalationFor(ctx: ToolContext): Promise<EscalationSummaryRow> {
   const row = must(
     await db()
       .from('escalations')
-      .select('escalation_id, status, preferred_time, user_name, user_email')
+      .select('escalation_id, status, preferred_time, user_name, user_email, customer_id, contact_source, contact_missing_reason')
       .eq('conversation_id', ctx.conversationId)
       .neq('status', 'closed')
       .maybeSingle(),
