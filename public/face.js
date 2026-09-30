@@ -19,13 +19,43 @@ const STATE_PARAMS = {
   speaking: { sway: 0.07, swaySpeed: 0.6, nod: 0.05, tilt: 0.02, turn: 0, jawGain: 1 },
 };
 
-// Where the jaw is, as fractions of the normalised head (found by inspecting the scan):
-// vertices below the mouth line, on the front of the face and within the jaw's width move
-// down with the voice; the weight fades out smoothly so the skin stretches rather than tears.
 const HEAD_HEIGHT = 2.3;
-const JAW = { mouthY: -0.36, chinY: -0.78, fadeY: 0.12, frontZ: 0.05, halfWidth: 0.42, drop: 0.12, lipLift: 0.3 };
 // A clean, straight cut across the neck (in the head's normalised space), like a bust.
 const NECK_CLIP_Y = -HEAD_HEIGHT / 2 + 0.12;
+
+// Facial features on the normalised head (origin at its centre, height HEAD_HEIGHT). The eyes
+// were measured from a front render with a coordinate grid; the lips from the vertices
+// themselves: the lips meet in a crease at y = -0.311 on the centre line, dipping toward the
+// corners, with a shallow pocket behind the upper lip.
+const FEATURES = {
+  lipSeamY: -0.3115, // where the lips meet, at the centre
+  lipSeamCurve: -0.02, // the seam dips this much at the mouth's corners
+  lipFrontZ: 0.822, // the front of the lips at the centre…
+  lipFrontCurve: 2.2, // …curving back toward the corners (z = lipFrontZ - curve * x²)
+  mouthHalfWidth: 0.2,
+  chinY: -0.78,
+  jawHalfWidth: 0.42,
+  faceFrontZ: 0.45, // only the front of the face moves; cheeks and neck sides stay put
+  eyes: [
+    { x: -0.265, y: 0.185 },
+    { x: 0.255, y: 0.185 },
+  ],
+  eyeHalfWidth: 0.125,
+  eyeHalfHeight: 0.05,
+  eyeFrontZ: 0.4,
+};
+
+// The scan's lips are one closed surface, so the mouth opens by splitting at the seam: the
+// lower lip and jaw drop, the upper lip lifts a little, and the band that stretches open
+// between them is shaded dark so it reads as the inside of the mouth.
+const MOUTH = { jawDrop: 0.13, lipLift: 0.012, jawBack: 0.3, seamShadeWidth: 0.006, pocketDepth: 0.07 };
+// The scan's eyes are closed; the lids are cut open as almond-shaped holes (like the hollow
+// eyes of a mask), which also lets them blink.
+const BLINK = { everyMin: 3.5, everyMax: 6.5, duration: 0.16 };
+
+// Vapi's voice level for ordinary speech sits around 0.2-0.6, so it is scaled up for the mouth
+// to open clearly; loud peaks simply clamp at fully open.
+const VOICE_TO_MOUTH = 1.8;
 
 const STATE_EASING = 0.05;
 const LEVEL_EASING = 0.35;
@@ -110,7 +140,7 @@ function cropToHead(geometry) {
   return box;
 }
 
-async function loadHeadGeometry() {
+export async function loadHeadGeometry() {
   const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
   let source = null;
   gltf.scene.traverse((node) => {
@@ -128,27 +158,55 @@ async function loadHeadGeometry() {
   return geometry;
 }
 
-// How each vertex follows the voice, computed once from the head's resting shape: positive
-// weights drop with the jaw (below the mouth line), small negative weights lift the upper
-// lip, so the mouth reads as opening rather than the chin just stretching.
-function jawWeights(base, count) {
-  const half = HEAD_HEIGHT / 2;
-  const mouthY = JAW.mouthY * half;
-  const chinY = JAW.chinY * half;
-  const lipBand = JAW.fadeY * half * 0.5;
-  const weights = new Float32Array(count);
+// How each vertex takes part in the face's movement, computed once from the resting shape.
+function buildRig(base, count) {
+  const F = FEATURES;
+  const jaw = new Float32Array(count); // follows the jaw down (0..1)
+  const lip = new Float32Array(count); // follows the upper lip up (0..1)
+  const shade = new Float32Array(count); // darkens as the mouth opens (0..1)
+  const shaded = [];
+  const eyeVertices = []; // [index, u, v]: position relative to an eye, in eye half-sizes
   for (let i = 0; i < count; i++) {
     const x = base[i * 3];
     const y = base[i * 3 + 1];
     const z = base[i * 3 + 2];
-    const front = smoothstep(JAW.frontZ * half - 0.2, JAW.frontZ * half + 0.2, z);
-    const inside = 1 - smoothstep(JAW.halfWidth * half * 0.7, JAW.halfWidth * half, Math.abs(x));
-    const below = smoothstep(mouthY, mouthY - JAW.fadeY * half, y);
-    const aboveNeck = 1 - smoothstep(chinY + JAW.fadeY * half, chinY - JAW.fadeY * half, y);
-    const upperLip = smoothstep(mouthY - 0.01, mouthY + 0.02, y) * (1 - smoothstep(mouthY + lipBand * 0.4, mouthY + lipBand, y));
-    weights[i] = (below * aboveNeck - upperLip * JAW.lipLift) * front * inside;
+    const front = smoothstep(F.faceFrontZ - 0.15, F.faceFrontZ + 0.1, z);
+    const seam = F.lipSeamY + F.lipSeamCurve * (x / F.mouthHalfWidth) ** 2;
+    const lipFront = F.lipFrontZ - F.lipFrontCurve * x * x;
+    const dy = y - seam;
+    const insideJaw = 1 - smoothstep(F.jawHalfWidth * 0.6, F.jawHalfWidth, Math.abs(x));
+    const insideMouth = 1 - smoothstep(F.mouthHalfWidth * 0.8, F.mouthHalfWidth * 1.1, Math.abs(x));
+    // Across the mouth the split is a hard step at the seam, so the lips actually part; beyond
+    // the corners it softens, so the cheeks stretch instead of tearing.
+    const split = insideMouth * (dy < 0 ? 1 : 0) + (1 - insideMouth) * smoothstep(0.01, -0.03, dy);
+    jaw[i] = split * smoothstep(F.chinY - 0.1, F.chinY + 0.05, y) * insideJaw * front;
+    // The front of the upper lip, just above the seam, lifts a little.
+    const onLipFront = z > lipFront - 0.015 ? 1 : 0;
+    lip[i] = smoothstep(0, 0.005, dy) * (1 - smoothstep(0.025, 0.045, dy)) * onLipFront * insideMouth;
+    // Dark when open: the seam itself, and every surface set back behind the lip fronts (the
+    // pocket above the seam and the lower lip's inner face) that the gap reveals.
+    const seamShade = Math.exp(-((dy / MOUTH.seamShadeWidth) ** 2));
+    const pocket = dy > -MOUTH.pocketDepth * 0.5 && dy < MOUTH.pocketDepth && z < lipFront - 0.015 ? 1 : 0;
+    shade[i] = Math.max(seamShade, pocket) * insideMouth * front;
+    if (shade[i] > 0.001) shaded.push(i);
+    if (z > F.eyeFrontZ) {
+      for (const eye of F.eyes) {
+        const u = (x - eye.x) / F.eyeHalfWidth;
+        const v = (y - eye.y) / F.eyeHalfHeight;
+        if (u * u + v * v < 4) eyeVertices.push([i, u, v]);
+      }
+    }
   }
-  return weights;
+  return { jaw, lip, shade, shaded, eyeVertices };
+}
+
+// 0 inside the eye opening (cut away), 1 outside. `open` scales the opening's height, so a
+// blink closes it from top and bottom; the corners are pinched into an almond shape.
+function eyeAlpha(u, v, open) {
+  if (open < 0.02) return 1;
+  const almond = v * (1 + 0.8 * u * u);
+  const r = u * u + (almond / open) ** 2;
+  return smoothstep(0.75, 1, r);
 }
 
 export async function createFace(container, { reduceMotion }) {
@@ -174,8 +232,14 @@ export async function createFace(container, { reduceMotion }) {
 
   const positions = geometry.attributes.position;
   const base = Float32Array.from(positions.array);
-  const weights = jawWeights(base, positions.count);
+  const rig = buildRig(base, positions.count);
+  // Per-vertex colour: RGB darkens the open mouth; alpha cuts the eye openings (alphaTest).
+  const colors = new THREE.BufferAttribute(new Float32Array(positions.count * 4).fill(1), 4);
+  geometry.setAttribute('color', colors);
+  const mouthColor = cssColor('--mascot-mouth');
   const material = new THREE.MeshPhysicalMaterial({
+    vertexColors: true,
+    alphaTest: 0.5,
     color: cssColor('--mascot-tint'),
     metalness: 1,
     roughness: 0.14,
@@ -191,23 +255,53 @@ export async function createFace(container, { reduceMotion }) {
   let target = STATE_PARAMS.idle;
   let level = 0;
   let levelTarget = 0;
-  let appliedJaw = 0;
+  let appliedMouth = -1;
+  let appliedEyes = -1;
   let time = 0;
   let last = performance.now();
   let frame = 0;
+  let nextBlink = BLINK.everyMin;
+  let blinkStart = -1;
 
-  // Moves the jaw only when its opening actually changed, then refreshes the lighting normals.
-  function setJaw(open) {
-    if (Math.abs(open - appliedJaw) < 0.002) return;
-    appliedJaw = open;
-    const drop = open * JAW.drop * HEAD_HEIGHT;
+  // Opens the mouth (0 closed … 1 wide), only when it actually changed.
+  function setMouth(open) {
+    if (Math.abs(open - appliedMouth) < 0.002) return;
+    appliedMouth = open;
+    const drop = open * MOUTH.jawDrop;
+    const lift = open * MOUTH.lipLift;
     for (let i = 0; i < positions.count; i++) {
-      const w = weights[i];
-      positions.setY(i, base[i * 3 + 1] - drop * w);
-      positions.setZ(i, base[i * 3 + 2] - drop * w * 0.35);
+      const jaw = rig.jaw[i];
+      positions.setY(i, base[i * 3 + 1] - drop * jaw + lift * rig.lip[i]);
+      positions.setZ(i, base[i * 3 + 2] - drop * jaw * MOUTH.jawBack);
     }
     positions.needsUpdate = true;
     geometry.computeVertexNormals();
+    for (const i of rig.shaded) {
+      const t = rig.shade[i] * open;
+      colors.setXYZ(i, 1 + (mouthColor.r - 1) * t, 1 + (mouthColor.g - 1) * t, 1 + (mouthColor.b - 1) * t);
+    }
+    colors.needsUpdate = true;
+  }
+
+  // Opens the eyes (1 open … 0 shut), only when it actually changed.
+  function setEyes(open) {
+    if (Math.abs(open - appliedEyes) < 0.01) return;
+    appliedEyes = open;
+    for (const [i, u, v] of rig.eyeVertices) colors.setW(i, eyeAlpha(u, v, open));
+    colors.needsUpdate = true;
+  }
+
+  // Blinks every few seconds, at a slightly irregular rhythm so it doesn't feel mechanical.
+  function eyeOpenness(t) {
+    if (blinkStart < 0 && t >= nextBlink) blinkStart = t;
+    if (blinkStart < 0) return 1;
+    const p = (t - blinkStart) / BLINK.duration;
+    if (p >= 1) {
+      blinkStart = -1;
+      nextBlink = t + BLINK.everyMin + Math.random() * (BLINK.everyMax - BLINK.everyMin);
+      return 1;
+    }
+    return 1 - Math.sin(Math.PI * p);
   }
 
   function pose(t) {
@@ -223,7 +317,8 @@ export async function createFace(container, { reduceMotion }) {
     for (const key of Object.keys(current)) current[key] += (target[key] - current[key]) * STATE_EASING;
     level += (levelTarget - level) * LEVEL_EASING;
     time += dt;
-    setJaw(level * current.jawGain);
+    setMouth(Math.min(1, level * VOICE_TO_MOUTH) * current.jawGain);
+    setEyes(eyeOpenness(time));
     pose(time);
     renderer.render(scene, camera);
   }
@@ -231,7 +326,8 @@ export async function createFace(container, { reduceMotion }) {
   // Under reduced motion the face is drawn once per state: present, but still.
   function renderStill() {
     Object.assign(current, target);
-    setJaw(0);
+    setMouth(0);
+    setEyes(1);
     head.rotation.set(target.tilt, target.turn * 0.5, 0);
     head.position.y = 0;
     renderer.render(scene, camera);

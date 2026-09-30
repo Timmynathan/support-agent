@@ -46,9 +46,13 @@ const ENDED_REASONS = {
 };
 
 const MIC_HINT_AFTER_MS = 6000;
+// Vapi connects in under a second when the browser's audio gets through; when it doesn't,
+// Vapi waits ~15 s and gives up. Past this point, say so instead of spinning silently.
+const SLOW_CONNECT_MS = 8000;
 const MIC_HEARD_LEVEL = 0.02;
 const GREETING_FALLBACK_MS = 8000;
 const CAPTION_SWAP_MS = 120;
+const MIC_HINT_TEXT = "I can't hear you yet. Check that your microphone is on, selected and not muted.";
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 let vapi = null;
@@ -58,6 +62,7 @@ let endedReason = null;
 let callStartedAt = 0;
 let timerInterval = null;
 let micHintTimer = null;
+let slowConnectTimer = null;
 let micHeard = false;
 let pendingQuestion = null;
 let greetingDone = false;
@@ -183,6 +188,8 @@ function formatElapsed(ms) {
 }
 
 function startCallEffects() {
+  clearTimeout(slowConnectTimer);
+  el.micHint.textContent = MIC_HINT_TEXT;
   callStartedAt = Date.now();
   el.timer.textContent = '0:00';
   timerInterval = setInterval(() => (el.timer.textContent = formatElapsed(Date.now() - callStartedAt)), 1000);
@@ -194,6 +201,7 @@ function startCallEffects() {
 }
 
 function stopCallEffects() {
+  clearTimeout(slowConnectTimer);
   clearInterval(timerInterval);
   clearTimeout(micHintTimer);
   clearTimeout(greetingFallback);
@@ -291,6 +299,12 @@ async function startCall() {
   clearError();
   endedReason = null;
   setState('connecting');
+  clearTimeout(slowConnectTimer);
+  slowConnectTimer = setTimeout(() => {
+    if (state !== 'connecting') return;
+    el.micHint.textContent = 'Still connecting. This is usually the network: if it keeps taking this long, try another connection (a phone hotspot, for example) or turn off any VPN.';
+    el.micHint.hidden = false;
+  }, SLOW_CONNECT_MS);
   try {
     await vapi.start(assistantId);
   } catch (error) {
