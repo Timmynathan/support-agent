@@ -1,6 +1,6 @@
 /* Design tokens — the only file with raw colour, size and timing values.
    Brand (assets/brand-direction.md): deep blue primary, teal accent, off-white background,
-   Inter or the system stack; calm, minimal, trustworthy; no gradients, neon or emojis.
+   Geist (clean, geometric) with Inter and the system stack as fallbacks; calm, minimal, trustworthy; no gradients, neon or emojis.
    Motion (Emil Kowalski's design engineering): strong custom curves, UI motion under 300ms. */
 :root {
   /* Colour */
@@ -26,22 +26,22 @@
   --shadow-call: 0 10px 28px rgb(22 55 107 / 0.28);
   --shadow-call-danger: 0 10px 28px rgb(180 35 24 / 0.26);
 
-  /* Relay, the voice orb (public/orb.js reads these). The orb is chrome, so it shows only
-     what it reflects: a sky-to-floor dome (sky, bright horizon, blue-grey floor) plus soft
-     blue, teal, white and warm lights. No gradient is used on the page itself. */
-  --orb-env-sky: #8ea4c8;
-  --orb-env-floor: #4a5b7a;
-  --orb-env-horizon: #f7f9fc;
-  --orb-env-key: #f4f6fa;
-  --orb-env-primary: #3d6fc4;
-  --orb-env-accent: #5cc3cb;
-  --orb-env-warm: #f2c29a;
-  --orb-tint: #cdd6e4;
-  --orb-shadow: rgb(22 55 107 / 0.18);
-  --orb-fallback: #1f3558;
+  /* Relay, the steel face (public/face.js reads these). Chrome shows only what it reflects:
+     a sky-to-floor dome (sky, bright horizon, blue-grey floor) plus soft blue, teal, white
+     and warm lights. No gradient is used on the page itself. */
+  --mascot-env-sky: #8ea4c8;
+  --mascot-env-floor: #4a5b7a;
+  --mascot-env-horizon: #f7f9fc;
+  --mascot-env-key: #f4f6fa;
+  --mascot-env-primary: #3d6fc4;
+  --mascot-env-accent: #5cc3cb;
+  --mascot-env-warm: #f2c29a;
+  --mascot-tint: #8a96ab;
+  --mascot-shadow: rgb(22 55 107 / 0.18);
+  --mascot-fallback: #1f3558;
 
   /* Type */
-  --font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-family: Geist, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -68,12 +68,12 @@
   --content-width: 34rem;
   --lede-width: 28rem;
   --size-call: 4.5rem;
-  --size-orb: min(17rem, 68vw);
-  --size-orb-shadow-height: 1.25rem;
-  --orb-shadow-width: calc(var(--size-orb) * 0.42);
-  --orb-placeholder-inset: 18%;
-  --orb-placeholder-opacity: 0.12;
-  --orb-shadow-blur: 14px;
+  --size-mascot: min(17rem, 68vw);
+  --size-mascot-shadow-height: 1.25rem;
+  --mascot-shadow-width: calc(var(--size-mascot) * 0.42);
+  --mascot-placeholder-inset: 18%;
+  --mascot-placeholder-opacity: 0.12;
+  --mascot-shadow-blur: 14px;
   --size-icon: 1.625rem;
   --size-icon-sm: 1.125rem;
   --size-dot: 0.5rem;
@@ -91,7 +91,7 @@
   --duration-fast: 200ms;
   --duration-base: 250ms;
   --duration-enter: 300ms;
-  --duration-orb-reveal: 600ms;
+  --duration-mascot-reveal: 600ms;
   --stagger: 60ms;
   --press-scale: 0.97;
   --enter-offset: 0.5rem;
@@ -122,6 +122,6 @@
     --color-focus: #5cc3cb;
     --shadow-call: 0 10px 28px rgb(0 0 0 / 0.45);
     --shadow-call-danger: 0 10px 28px rgb(0 0 0 / 0.45);
-    --orb-shadow: rgb(0 0 0 / 0.55);
+    --mascot-shadow: rgb(0 0 0 / 0.55);
   }
 }

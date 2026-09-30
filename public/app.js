@@ -13,7 +13,7 @@ const el = {
   muteButton: document.getElementById('mute-button'),
   muteLabel: document.getElementById('mute-label'),
   micHint: document.getElementById('mic-hint'),
-  orb: document.getElementById('orb'),
+  mascot: document.getElementById('mascot'),
   error: document.getElementById('error'),
   errorText: document.getElementById('error-text'),
   errorDetailsWrap: document.getElementById('error-details-wrap'),
@@ -24,17 +24,17 @@ const el = {
 };
 
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
-// `orb` is what Relay's orb does in that state (public/orb.js).
+// `face` is what Relay's face does in that state (public/face.js).
 const STATES = {
-  loading: { status: 'Preparing…', label: 'Start call', action: 'Start call', enabled: false, inCall: false, orb: 'idle' },
-  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, orb: 'idle' },
-  ready: { status: 'Ready when you are', label: 'Start call', action: 'Start call', enabled: true, inCall: false, orb: 'idle' },
-  connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, orb: 'connecting' },
-  listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'listening' },
-  thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'thinking' },
-  speaking: { status: 'Relay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'speaking' },
-  ended: { status: 'Call ended', label: 'Call again', action: 'Start a new call', enabled: true, inCall: false, orb: 'idle' },
-  error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false, orb: 'idle' },
+  loading: { status: 'Preparing…', label: 'Start call', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
+  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
+  ready: { status: 'Ready when you are', label: 'Start call', action: 'Start call', enabled: true, inCall: false, face: 'idle' },
+  connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, face: 'connecting' },
+  listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'listening' },
+  thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'thinking' },
+  speaking: { status: 'Relay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'speaking' },
+  ended: { status: 'Call ended', label: 'Call again', action: 'Start a new call', enabled: true, inCall: false, face: 'idle' },
+  error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false, face: 'idle' },
 };
 const LIVE_STATES = new Set(['listening', 'thinking', 'speaking']);
 
@@ -62,7 +62,7 @@ let micHeard = false;
 let pendingQuestion = null;
 let greetingDone = false;
 let greetingFallback = null;
-let orb = null;
+let face = null;
 const level = { mic: 0, agent: 0 };
 
 // ── State ──────────────────────────────────────────────────────────
@@ -79,14 +79,14 @@ function setState(name) {
   el.muteButton.hidden = !LIVE_STATES.has(name);
   el.timer.hidden = !LIVE_STATES.has(name);
   for (const chip of el.chips) chip.disabled = !(s.enabled || s.inCall) || name === 'connecting';
-  orb?.setState(s.orb);
-  feedOrbLevel();
+  face?.setState(s.face);
+  feedFaceLevel();
   if (!s.inCall) stopCallEffects();
 }
 
-// The orb follows whoever is audible: the agent while it speaks, otherwise the caller's mic.
-function feedOrbLevel() {
-  orb?.setLevel(state === 'speaking' ? level.agent : state === 'listening' ? level.mic : 0);
+// The face follows whoever is audible: its jaw moves with the agent's voice; while listening it reacts to the caller's mic.
+function feedFaceLevel() {
+  face?.setLevel(state === 'speaking' ? level.agent : state === 'listening' ? level.mic : 0);
 }
 
 function showError(message, details) {
@@ -157,23 +157,24 @@ function onTranscript(message) {
   }
 }
 
-// ── Orb and timer ──────────────────────────────────────────────────
+// ── Face and timer ─────────────────────────────────────────────────
 
-// Loaded separately so the call works even if 3D can't: on any failure the orb stays a still,
-// solid shape (the same one shown while loading).
-async function loadOrb() {
+// Loaded separately so the call works even if 3D can't: on any failure (no WebGL, the CDN or
+// the model not loading) the face stays a still, solid shape, the same one shown while loading.
+async function loadFace() {
   try {
-    const { createOrb } = await import('/orb.js');
-    orb = createOrb(el.orb, { reduceMotion });
+    const { createFace } = await import('/face.js');
+    face = await createFace(el.mascot, { reduceMotion });
   } catch {
-    orb = null;
+    face = null;
   }
-  if (!orb) {
-    el.orb.dataset.fallback = 'true';
+  if (!face) {
+    el.mascot.dataset.fallback = 'true';
     return;
   }
-  orb.setState(STATES[state].orb);
-  el.orb.dataset.ready = 'true';
+  face.setState(STATES[state].face);
+  feedFaceLevel();
+  el.mascot.dataset.ready = 'true';
 }
 
 function formatElapsed(ms) {
@@ -197,7 +198,7 @@ function stopCallEffects() {
   clearTimeout(micHintTimer);
   clearTimeout(greetingFallback);
   level.mic = level.agent = 0;
-  orb?.setLevel(0);
+  face?.setLevel(0);
   el.micHint.hidden = true;
   el.muteButton.setAttribute('aria-pressed', 'false');
   el.muteLabel.textContent = 'Mute';
@@ -264,11 +265,11 @@ function attachEvents() {
   });
   vapi.on('volume-level', (value) => {
     level.agent = value;
-    feedOrbLevel();
+    feedFaceLevel();
   });
   vapi.on('local-volume-level', (value) => {
     level.mic = value;
-    feedOrbLevel();
+    feedFaceLevel();
     if (value > MIC_HEARD_LEVEL && !micHeard) {
       micHeard = true;
       el.micHint.hidden = true;
@@ -336,7 +337,7 @@ async function init() {
   }
 }
 
-void loadOrb();
+void loadFace();
 el.callButton.addEventListener('click', () => void onCallButton());
 el.muteButton.addEventListener('click', onMute);
 for (const chip of el.chips) chip.addEventListener('click', () => void onChip(chip.dataset.question));

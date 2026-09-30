@@ -131,59 +131,59 @@ button {
   font-size: var(--font-size-lg);
 }
 
-/* ── Relay, the orb ─────────────────────────────────────────────── */
+/* ── Relay, the steel face ─────────────────────────────────────────────── */
 
-.orb-stage {
+.mascot-stage {
   display: grid;
   justify-items: center;
 }
 
-.orb {
+.mascot {
   position: relative;
-  width: var(--size-orb);
+  width: var(--size-mascot);
   aspect-ratio: 1;
 }
 
-.orb canvas {
+.mascot canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
-  transition: opacity var(--duration-orb-reveal) var(--ease-out);
+  transition: opacity var(--duration-mascot-reveal) var(--ease-out);
 }
 
-.orb[data-ready='true'] canvas {
+.mascot[data-ready='true'] canvas {
   opacity: 1;
 }
 
-/* Loading and fallback share one quiet shape: a still, solid orb in the brand colour.
-   Loading fades it out when the 3D orb is ready; the fallback simply keeps it. */
-.orb::before {
+/* Loading and fallback share one quiet shape: a still, solid circle in the brand colour.
+   Loading fades it out when the 3D face is ready; the fallback simply keeps it. */
+.mascot::before {
   content: '';
   position: absolute;
-  inset: var(--orb-placeholder-inset);
+  inset: var(--mascot-placeholder-inset);
   border-radius: 50%;
-  background: var(--orb-fallback);
-  opacity: var(--orb-placeholder-opacity);
-  transition: opacity var(--duration-orb-reveal) var(--ease-out);
+  background: var(--mascot-fallback);
+  opacity: var(--mascot-placeholder-opacity);
+  transition: opacity var(--duration-mascot-reveal) var(--ease-out);
 }
 
-.orb[data-ready='true']::before {
+.mascot[data-ready='true']::before {
   opacity: 0;
 }
 
-.orb[data-fallback='true']::before {
+.mascot[data-fallback='true']::before {
   opacity: 1;
 }
 
-.orb-shadow {
-  width: var(--orb-shadow-width);
-  height: var(--size-orb-shadow-height);
+.mascot-shadow {
+  width: var(--mascot-shadow-width);
+  height: var(--size-mascot-shadow-height);
   margin-top: calc(var(--space-6) * -1);
   border-radius: 50%;
-  background: var(--orb-shadow);
-  filter: blur(var(--orb-shadow-blur));
+  background: var(--mascot-shadow);
+  filter: blur(var(--mascot-shadow-blur));
 }
 
 /* ── Call controls ──────────────────────────────────────────────── */
@@ -515,4 +515,10 @@ button {
   .caption-text.is-changing {
     filter: none;
   }
+}
+
+.footnote a {
+  color: inherit;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: var(--space-1);
 }

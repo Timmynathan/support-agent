@@ -20,7 +20,8 @@ const PUBLIC_DIR = fromRoot('public');
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
-  '/orb.js': { file: 'orb.js', type: 'text/javascript; charset=utf-8' },
+  '/face.js': { file: 'face.js', type: 'text/javascript; charset=utf-8' },
+  '/models/lee-perry-smith.glb': { file: 'models/lee-perry-smith.glb', type: 'model/gltf-binary' },
   '/tokens.css': { file: 'tokens.css', type: 'text/css; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
   '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },
