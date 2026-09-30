@@ -7,7 +7,7 @@ import { fromRoot } from '../shared/paths.js';
 import { endConversation, getOrStartConversation } from '../server/registry.js';
 import { HttpError, parseJsonObject, readBody, sendJson } from '../server/httpUtil.js';
 import { verifyBearer, verifyWebhookSignature } from './auth.js';
-import { normalizeSpokenReferences } from './transcript.js';
+import { normalizeSpokenReferences, speakableReferences } from './transcript.js';
 
 // Vapi is the voice layer only: speech to text, text to speech, call handling. Every support
 // decision is made by the agent behind these routes. Vapi calls:
@@ -102,7 +102,7 @@ async function chatCompletions(req: IncomingMessage, res: ServerResponse): Promi
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
         res.write(sseChunk(completionId, { role: 'assistant' }, null));
       }
-      res.write(sseChunk(completionId, { content: text }, null));
+      res.write(sseChunk(completionId, { content: speakableReferences(text) }, null));
     },
   };
   // The caller spoke over the agent, or hung up: Vapi drops this request mid-stream.

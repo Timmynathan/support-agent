@@ -53,11 +53,6 @@ function assistantConfig(publicUrl: string, webhookCredentialId: string) {
         options: { timeoutSeconds: 12, triggerMaxCount: 2, triggerResetMode: 'onUserSpeech' },
         do: [{ type: 'say', exact: "Are you still there? I'm here whenever you're ready." }],
       },
-      {
-        // Last line of defence if the server never answers at all.
-        on: 'model.response.timeout',
-        do: [{ type: 'say', exact: "I'm sorry, I'm having trouble right now. Please try again in a moment." }],
-      },
     ],
   };
 }

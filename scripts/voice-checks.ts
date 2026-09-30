@@ -1,7 +1,7 @@
 // Offline checks for the voice path: streaming parse of the structured turn output, and
 // normalisation of references garbled by speech-to-text. No network, no model.
 import { StructuredSpeechParser } from '../src/agent/speechStream.js';
-import { normalizeSpokenReferences } from '../src/voice/transcript.js';
+import { normalizeSpokenReferences, speakableReferences } from '../src/voice/transcript.js';
 
 let bad = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -44,6 +44,21 @@ const cases: Array<[string, string]> = [
   // Heard verbatim in the first real call.
   ["It's a transaction TXN of 9001.", "It's a transaction TXN-9001."],
   ['transaction number TXN number 9001', 'transaction number TXN-9001'],
+  // Heard in real calls on 30 September.
+  ['Please, can you check transaction on TXN 9, double o, 1?', 'Please, can you check transaction on TXN-9001?'],
+  ['makes a TXN 9 double o 1.', 'makes a TXN-9001.'],
+  ['Let me check transaction on TXN. N 9 w o 1.', 'Let me check transaction on TXN. N 9 w o 1.'],
+  // Words after the reference stay words, even ones that sound like digits.
+  ['TXN 9001 to Kenya', 'TXN-9001 to Kenya'],
+  ['is TXN nine zero zero one for my supplier', 'is TXN-9001 for my supplier'],
 ];
 for (const [input, want] of cases) check(`normalize "${input}"`, normalizeSpokenReferences(input).text, want);
+
+// Speech: references are read out letter by letter and digit by digit, never as a minus sign.
+const speech: Array<[string, string]> = [
+  ['Transaction TXN-9001 is processing.', 'Transaction T X N nine zero zero one is processing.'],
+  ['Your ticket is TKT-00012 and escalation ESC-00003.', 'Your ticket is T K T zero zero zero one two and escalation E S C zero zero zero zero three.'],
+  ['Fees vary by corridor.', 'Fees vary by corridor.'],
+];
+for (const [input, want] of speech) check(`speak "${input}"`, speakableReferences(input), want);
 process.exitCode = bad;
