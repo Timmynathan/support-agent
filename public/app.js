@@ -8,6 +8,7 @@ const el = {
   console: document.getElementById('console'),
   callButton: document.getElementById('call-button'),
   callLabel: document.getElementById('call-label'),
+  status: document.getElementById('status'),
   statusText: document.getElementById('status-text'),
   timer: document.getElementById('timer'),
   muteButton: document.getElementById('mute-button'),
@@ -32,7 +33,7 @@ const el = {
 const STATES = {
   loading: { status: 'Preparing…', label: 'Start Conversation', action: 'Start conversation', enabled: false, inCall: false, face: 'idle' },
   unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
-  ready: { status: 'Ready when you are', label: 'Start Conversation', action: 'Start conversation', enabled: true, inCall: false, face: 'idle' },
+  ready: { status: '', label: 'Start Conversation', action: 'Start conversation', enabled: true, inCall: false, face: 'idle' },
   connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, face: 'connecting' },
   listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'listening' },
   thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'thinking' },
@@ -81,6 +82,7 @@ function setState(name) {
   el.console.dataset.state = name;
   el.console.dataset.inCall = String(s.inCall);
   el.statusText.textContent = s.status;
+  el.status.hidden = !s.status;
   el.callLabel.textContent = s.label;
   el.callButton.setAttribute('aria-label', s.action);
   el.callButton.disabled = !s.enabled;

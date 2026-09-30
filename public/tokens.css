@@ -51,7 +51,7 @@
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
   --font-size-lg: 1.0625rem;
-  --font-size-title: clamp(1.625rem, 1.3rem + 1.4vw, 2.125rem);
+  --font-size-title: clamp(1.5rem, 1.25rem + 1vw, 1.875rem);
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --line-height-tight: 1.2;
@@ -71,14 +71,14 @@
 
   /* Size */
   --content-width: 34rem;
-  --dock-width: 40rem;
-  --dock-clearance: 6rem;
+  --dock-width: 30rem;
+  --dock-clearance: 4.5rem;
   --thread-height: min(18rem, 40dvh);
   --bubble-max-width: 85%;
-  --size-send: 2.25rem;
+  --size-send: 1.875rem;
   --lede-width: 28rem;
   --size-call: 4.5rem;
-  --size-mascot: min(17rem, 68vw);
+  --size-mascot: min(11rem, 50vw);
   --size-mascot-shadow-height: 1.25rem;
   --mascot-shadow-width: calc(var(--size-mascot) * 0.42);
   --mascot-placeholder-inset: 18%;

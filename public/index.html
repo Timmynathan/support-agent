@@ -30,12 +30,17 @@
         </svg>
         RelayPay
       </span>
-      <span class="tag">Support</span>
     </header>
 
     <main class="stage">
       <section class="hero enter">
-        <p class="eyebrow">RelayPay voice support</p>
+        <p class="trust-tag">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path class="trust-badge" d="M12 1.5l2.4 1.8 3-.2 1 2.8 2.6 1.6-.8 2.9 1.3 2.7-2.2 2 -.3 3-3 .6-1.8 2.4-2.7-1.2-2.8 1.2-1.8-2.4-3-.6-.3-3-2.2-2 1.3-2.7-.8-2.9 2.6-1.6 1-2.8 3 .2z" />
+            <path class="trust-check" d="M8 12.2l2.7 2.7L16.2 9.4" />
+          </svg>
+          Chat is protected
+        </p>
         <h1 class="title">Hi, I'm Relay!</h1>
         <p class="lede">How can I help you today?</p>
       </section>
@@ -65,7 +70,7 @@
 
         <p class="call-label" id="call-label" aria-hidden="true">Start Conversation</p>
 
-        <p class="status" role="status" aria-live="polite">
+        <p class="status" id="status" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
           <span id="status-text">Preparing…</span>
           <span class="timer" id="timer" hidden>0:00</span>
@@ -90,8 +95,7 @@
         </details>
       </section>
 
-      <section class="suggestions enter" aria-labelledby="suggestions-title">
-        <p class="suggestions-title" id="suggestions-title">Tap to ask without speaking</p>
+      <section class="suggestions enter" aria-label="Suggested questions (tap to ask without speaking)">
         <ul class="chips">
           <li><button type="button" class="chip" data-question="What fees does RelayPay charge for international payments?">What fees do you charge?</button></li>
           <li><button type="button" class="chip" data-question="How long do international payouts take?">How long do payouts take?</button></li>
@@ -121,10 +125,5 @@
         </button>
       </form>
     </div>
-
-    <footer class="footnote">
-      Conversations are logged so RelayPay support can follow up. Please don't say full card or bank account numbers.
-      <br />Relay's face: "Infinite, 3D Head Scan" by Lee Perry-Smith, <a href="https://creativecommons.org/licenses/by/3.0/" rel="noopener">CC BY 3.0</a>.
-    </footer>
   </body>
 </html>

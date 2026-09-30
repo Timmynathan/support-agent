@@ -19,7 +19,7 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-base);
   -webkit-font-smoothing: antialiased;
-  /* Room under the page content for the pinned dock, so it never covers the footer. */
+  /* Room under the page content for the pinned dock, so it never covers the page content. */
   padding-bottom: var(--dock-clearance);
 }
 
@@ -51,12 +51,9 @@ button {
 
 .topbar {
   width: 100%;
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: var(--space-6) var(--gutter) 0;
+  padding: var(--space-4) var(--space-6) 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
 
 .wordmark {
@@ -73,25 +70,16 @@ button {
   height: var(--size-icon-sm);
 }
 
-.tag {
-  padding: var(--space-1) var(--space-3);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-pill);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-}
-
 /* ── Layout ─────────────────────────────────────────────────────── */
 
 .stage {
   width: 100%;
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: var(--space-8) var(--gutter) var(--space-8);
+  padding: var(--space-2) var(--gutter) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-3);
 }
 
 /* Page entrance: seen once per visit, so a short stagger is allowed. Never blocks input. */
@@ -120,13 +108,35 @@ button {
   text-align: center;
 }
 
-.eyebrow {
+.trust-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   margin: 0 0 var(--space-2);
-  color: var(--color-accent);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+}
+
+.trust-tag svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.trust-badge {
+  fill: var(--color-primary);
+}
+
+.trust-check {
+  fill: none;
+  stroke: var(--color-on-primary);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .title {
@@ -193,7 +203,7 @@ button {
 .mascot-shadow {
   width: var(--mascot-shadow-width);
   height: var(--size-mascot-shadow-height);
-  margin-top: calc(var(--space-6) * -1);
+  margin-top: calc(var(--space-4) * -1);
   border-radius: 50%;
   background: var(--mascot-shadow);
   filter: blur(var(--mascot-shadow-blur));
@@ -381,23 +391,32 @@ button {
 
 /* Pinned to the bottom, centred, from the first paint. A restrained treatment (brand: no
    chat-heavy look): a pill bar, and a compact thread above it once there are messages. */
+/* A full-width strip in the page colour, so content scrolling underneath disappears cleanly
+   behind it rather than peeking out around the pill. */
 .dock {
   position: fixed;
-  left: 50%;
-  bottom: var(--space-4);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 10;
-  width: min(var(--dock-width), calc(100% - var(--gutter) * 2));
-  transform: translateX(-50%);
+  padding: var(--space-2) var(--gutter) var(--space-4);
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.dock > * {
+  width: 100%;
+  max-width: var(--dock-width);
+  margin: 0 auto;
 }
 
 .chat-bar {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
@@ -407,12 +426,12 @@ button {
 .chat-input {
   flex: 1;
   min-width: 0;
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
 }
 
 .chat-input::placeholder {
@@ -577,14 +596,6 @@ button {
 
 /* ── Suggestions ────────────────────────────────────────────────── */
 
-.suggestions-title {
-  margin: 0 0 var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  text-align: center;
-}
-
 .chips {
   margin: 0;
   padding: 0;
@@ -596,11 +607,12 @@ button {
 }
 
 .chip {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-1) var(--space-3);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  font-size: var(--font-size-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
   text-align: left;
   cursor: pointer;
   transition:
@@ -657,17 +669,6 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* ── Footer ─────────────────────────────────────────────────────── */
-
-.footnote {
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: 0 var(--gutter) var(--space-8);
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-xs);
-  text-align: center;
-}
-
 /* ── Reduced motion: fewer and gentler, not none. Keep opacity, drop movement. ── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -699,10 +700,4 @@ button {
   .thread {
     transition-property: opacity;
   }
-}
-
-.footnote a {
-  color: inherit;
-  text-decoration-color: var(--color-border);
-  text-underline-offset: var(--space-1);
 }
