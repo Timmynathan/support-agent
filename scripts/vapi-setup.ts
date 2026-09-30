@@ -8,6 +8,8 @@
 //
 // Needs in .env: VAPI_PRIVATE_KEY, PUBLIC_URL (the tunnel URL), VAPI_WEBHOOK_CREDENTIAL_ID.
 
+import { END_CALL_PHRASE } from '../src/agent/closing.js';
+
 const VAPI_API = 'https://api.vapi.ai';
 
 // Our server ignores this (it answers from its own prompt and rules). It exists because Vapi
@@ -47,6 +49,8 @@ function assistantConfig(publicUrl: string, webhookCredentialId: string) {
     server: { url: `${base}/vapi/webhook`, credentialId: webhookCredentialId, timeoutSeconds: 10 },
     serverMessages: ['status-update', 'end-of-call-report'],
     maxDurationSeconds: 900,
+    // Said only by code, after a caller confirms they're finished (src/agent/closing.ts).
+    endCallPhrases: [END_CALL_PHRASE],
     hooks: [
       {
         on: 'customer.speech.timeout',

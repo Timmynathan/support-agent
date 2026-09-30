@@ -1,5 +1,6 @@
 // Offline checks for the voice path: streaming parse of the structured turn output, and
 // normalisation of references garbled by speech-to-text. No network, no model.
+import { CLOSING_LINES, closingLine, END_CALL_PHRASE, withoutEndCallPhrase } from '../src/agent/closing.js';
 import { StructuredSpeechParser } from '../src/agent/speechStream.js';
 import { normalizeSpokenReferences, speakableReferences } from '../src/voice/transcript.js';
 
@@ -61,4 +62,33 @@ const speech: Array<[string, string]> = [
   ['Fees vary by corridor.', 'Fees vary by corridor.'],
 ];
 for (const [input, want] of speech) check(`speak "${input}"`, speakableReferences(input), want);
+
+// The reply heard on 30 September: the model spelled the ticket out itself, with "dash".
+const modelSpelled = "I've logged this as ticket T K T dash zero zero zero one three so our team can look into it.";
+check('model-spelled reference → one written form', normalizeSpokenReferences(modelSpelled).text, "I've logged this as ticket TKT-00013 so our team can look into it.");
+check(
+  'model-spelled reference → spoken without "dash"',
+  speakableReferences(normalizeSpokenReferences(modelSpelled).text),
+  "I've logged this as ticket T K T zero zero zero one three so our team can look into it.",
+);
+
+// Closing lines: which one code adds, and when.
+check('goodbye line contains the end-call phrase', CLOSING_LINES.goodbye.toLowerCase().includes(END_CALL_PHRASE), true);
+check('model text cannot end the call', withoutEndCallPhrase('Thanks, goodbye for now!').toLowerCase().includes(END_CALL_PHRASE), false);
+const base = { askToType: 'none', endCall: false, answerType: 'answer', text: 'Fees vary by corridor.', escalationCreatedThisTurn: false } as const;
+const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]> = [
+  ['answer gets the follow-up question', base, CLOSING_LINES.anythingElse],
+  ['answer already ending in a question gets nothing', { ...base, text: 'Would you like me to raise it?' }, null],
+  ['decline gets the follow-up question', { ...base, answerType: 'decline' }, CLOSING_LINES.anythingElse],
+  ['clarify gets nothing', { ...base, answerType: 'clarify', text: 'Is it a payout?' }, null],
+  ['escalation still collecting details gets nothing', { ...base, answerType: 'escalate', text: 'Could you tell me your name.' }, null],
+  ['escalation just created gets the follow-up question', { ...base, answerType: 'escalate', text: 'Your reference is ESC-00004.', escalationCreatedThisTurn: true }, CLOSING_LINES.anythingElse],
+  ['caller finished: goodbye line', { ...base, answerType: 'social', endCall: true, text: "You're welcome." }, CLOSING_LINES.goodbye],
+  ['thanks without finishing: nothing', { ...base, answerType: 'social', text: "You're welcome." }, null],
+  ['end_call on a non-social reply is ignored', { ...base, endCall: true, text: 'Fees vary.' }, CLOSING_LINES.anythingElse],
+  ['email needed: type line', { ...base, answerType: 'clarify', askToType: 'email', text: 'What email should we use?' }, CLOSING_LINES.type_email],
+  ['customer ID needed: type line', { ...base, answerType: 'clarify', askToType: 'customer_id', text: 'I can look that up.' }, CLOSING_LINES.type_customer_id],
+  ['type line not repeated', { ...base, answerType: 'escalate', askToType: 'email', text: 'Please type your email in the chat box below.' }, null],
+];
+for (const [name, input, want] of closings) check(`closing: ${name}`, closingLine(input)?.line ?? null, want);
 process.exitCode = bad;

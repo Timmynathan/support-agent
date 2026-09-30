@@ -225,13 +225,121 @@ function onTranscript(message) {
     chat.callerText = '';
     chat.awaitingReply = false;
     refreshDoneButton();
-    if (!chat.relayBubble) {
-      chat.relayBubble = addBubble('relay', message.transcript);
-      return;
-    }
-    const current = chat.relayBubble.querySelector('.chat-text').textContent;
-    setBubbleText(chat.relayBubble, `${current} ${message.transcript}`);
+    if (!chat.relayBubble) chat.relayBubble = addBubble('relay', '');
+    const said = [chat.relayBubble.dataset.said, message.transcript].filter(Boolean).join(' ');
+    chat.relayBubble.dataset.said = said;
+    renderRelayText(chat.relayBubble, said);
+    const wanted = TYPE_REQUEST.exec(said);
+    if (wanted) requestTyping(wanted[1].toLowerCase() === 'email' ? 'email' : 'customer_id');
   }
+}
+
+// ── References in Relay's words ────────────────────────────────────
+
+// Vapi shows what the voice said, formatted for reading: a reference spoken as "T K T zero zero
+// zero one three" arrives as "T K T 0 0 0 1 3" (or with "dash"). This turns it back into the
+// one written form, TKT-00013. It looks like the server's reader (src/voice/transcript.ts) but
+// reads different input — Vapi's display text, not a caller's speech — so it stays separate.
+const REFERENCE_DIGITS = { TXN: 4, PAY: 4, CUS: 4, TKT: 5, ESC: 5 };
+const DIGIT_WORDS = { zero: '0', oh: '0', o: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9' };
+const SPACED_PREFIX = Object.keys(REFERENCE_DIGITS).map((prefix) => prefix.split('').join('[\\s.]+')).join('|');
+const REFERENCE_START = new RegExp(`\\b(${SPACED_PREFIX}|TXN|CUS|TKT|ESC|PAY(?=\\s*-))\\b(?:[\\s.]*(?:-|dash|hyphen|minus|negative)[\\s.]*|[\\s.]+)`, 'gi');
+const DISPLAY_DIGIT = /^[\s,-]*(\d+|zero|oh|o|one|two|three|four|five|six|seven|eight|nine)\b/i;
+const TYPE_REQUEST = /\btype your (email|customer id)\b/i;
+
+// Splits text into plain runs and references: [{ text }, { reference, text }, …].
+function findReferences(text) {
+  const parts = [];
+  let plainFrom = 0;
+  for (const match of text.matchAll(REFERENCE_START)) {
+    if (match.index < plainFrom) continue;
+    const prefix = match[1].replace(/[\s.]/g, '').toUpperCase();
+    let cursor = match.index + match[0].length;
+    let digits = '';
+    while (digits.length < REFERENCE_DIGITS[prefix]) {
+      const digit = DISPLAY_DIGIT.exec(text.slice(cursor));
+      if (!digit) break;
+      const value = /\d/.test(digit[1]) ? digit[1] : DIGIT_WORDS[digit[1].toLowerCase()];
+      if (digits.length + value.length > REFERENCE_DIGITS[prefix]) break;
+      digits += value;
+      cursor += digit[0].length;
+    }
+    if (digits.length !== REFERENCE_DIGITS[prefix]) continue;
+    parts.push({ text: text.slice(plainFrom, match.index) });
+    parts.push({ reference: `${prefix}-${digits}` });
+    plainFrom = cursor;
+  }
+  parts.push({ text: text.slice(plainFrom) });
+  return parts.filter((part) => part.reference || part.text);
+}
+
+function renderRelayText(item, text) {
+  const follow = nearBottom();
+  const body = item.querySelector('.chat-text');
+  body.replaceChildren(...findReferences(text).map((part) => (part.reference ? referenceChip(part.reference) : document.createTextNode(part.text))));
+  if (follow) el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
+const COPIED_FOR_MS = 1600;
+
+// A reference the caller may need later (a ticket number, say): shown highlighted, copied on click.
+function referenceChip(reference) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'ref-chip';
+  chip.setAttribute('aria-label', `Copy ${reference}`);
+  const value = document.createElement('span');
+  value.className = 'ref-chip-value';
+  value.textContent = reference;
+  const hint = document.createElement('span');
+  hint.className = 'ref-chip-hint';
+  hint.textContent = 'Copy';
+  chip.append(value, hint);
+  chip.addEventListener('click', () => void copyReference(chip, hint, reference));
+  return chip;
+}
+
+async function copyReference(chip, hint, reference) {
+  try {
+    await navigator.clipboard.writeText(reference);
+    hint.textContent = 'Copied';
+    chip.dataset.copied = 'true';
+  } catch {
+    // No clipboard access (an insecure page or a denied permission): say so, and select the
+    // text so it can still be copied by hand.
+    hint.textContent = 'Press Ctrl+C';
+    getSelection()?.selectAllChildren(chip.querySelector('.ref-chip-value'));
+  }
+  setTimeout(() => {
+    hint.textContent = 'Copy';
+    delete chip.dataset.copied;
+  }, COPIED_FOR_MS);
+}
+
+// ── Typing what shouldn't be spoken ────────────────────────────────
+
+const DEFAULT_PLACEHOLDER = 'Type a question for Relay…';
+const TYPE_PROMPTS = {
+  email: { placeholder: 'Type your email here…', inputMode: 'email', autocomplete: 'email' },
+  customer_id: { placeholder: 'Type your customer ID here…', inputMode: 'text', autocomplete: 'off' },
+};
+
+// Relay asked for an email or customer ID to be typed: point the caller at the chat box.
+function requestTyping(kind) {
+  if (el.chatForm.dataset.requested === kind) return;
+  const prompt = TYPE_PROMPTS[kind];
+  el.chatForm.dataset.requested = kind;
+  el.chatInput.placeholder = prompt.placeholder;
+  el.chatInput.inputMode = prompt.inputMode;
+  el.chatInput.autocomplete = prompt.autocomplete;
+  if (!el.chatInput.disabled) el.chatInput.focus();
+}
+
+function clearTypingRequest() {
+  delete el.chatForm.dataset.requested;
+  el.chatInput.placeholder = DEFAULT_PLACEHOLDER;
+  el.chatInput.inputMode = 'text';
+  el.chatInput.autocomplete = 'off';
 }
 
 // ── Face and timer ─────────────────────────────────────────────────
@@ -283,6 +391,7 @@ function stopCallEffects() {
   el.muteButton.setAttribute('aria-pressed', 'false');
   el.muteLabel.textContent = 'Mute';
   releaseDoneHold();
+  clearTypingRequest();
 }
 
 // ── Done speaking ──────────────────────────────────────────────────
@@ -320,6 +429,8 @@ function askTyped(question) {
   addBubble('caller', question, { tag: 'typed' });
   chat.callerBubble = null;
   chat.relayBubble = null;
+  chat.awaitingReply = true;
+  clearTypingRequest();
   vapi.send({ type: 'add-message', message: { role: 'user', content: question }, triggerResponseEnabled: true });
   if (state === 'listening') setState('thinking');
 }
@@ -357,7 +468,7 @@ function attachEvents() {
     // Vapi's reason often arrives after the call has ended, or not at all, so a caller left
     // without a reply also counts as a call that went wrong — never a quiet "ended".
     const unanswered = chat.awaitingReply;
-    const endedNormally = /customer-ended-call|assistant-ended-call/.test(endedReason ?? '');
+    const endedNormally = /customer-ended-call|assistant-ended-call|assistant-said-end-call-phrase/.test(endedReason ?? '');
     const failed = endedReason ? !endedNormally : unanswered;
     addDivider(failed ? 'Call dropped before Relay could answer' : 'Conversation ended');
     if (!failed) {

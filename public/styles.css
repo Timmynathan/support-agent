@@ -684,6 +684,52 @@ button {
   font-size: var(--font-size-2xs);
 }
 
+/* A reference in Relay's words: highlighted, and copied on click. The hint word ("Copy",
+   "Copied") says what happens, so the state is never colour alone. */
+.ref-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0 var(--space-1);
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) ease;
+}
+
+.ref-chip:active {
+  transform: scale(var(--press-scale));
+}
+
+.ref-chip-hint {
+  color: var(--color-accent);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.ref-chip[data-copied] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.ref-chip[data-copied] .ref-chip-hint {
+  color: var(--color-on-accent);
+}
+
+/* Relay asked for an email or customer ID to be typed: the bar is where to look. */
+.chat-bar[data-requested] {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-accent);
+}
+
 .chat-divider {
   align-self: center;
   margin: var(--space-1) 0;

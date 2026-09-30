@@ -5,6 +5,8 @@ import { fromRoot } from '../shared/paths.js';
 import { loadKnowledgeBase } from '../knowledge/knowledgeBase.js';
 import { buildRetriever, type RetrievalHit } from '../knowledge/retrieve.js';
 import * as log from './conversationLog.js';
+import { normalizeSpokenReferences } from '../voice/transcript.js';
+import { closingLine, withoutEndCallPhrase } from './closing.js';
 import { composeTurnMessage, TurnOutput, type AnswerType } from './prompt.js';
 import { AgentSession, type SdkTurn, type ToolEvent, type TurnHooks } from './session.js';
 import { StructuredSpeechParser } from './speechStream.js';
@@ -19,7 +21,7 @@ export const TURN_DEADLINE_MS = 20_000;
 export const LINES = {
   escalate:
     "This needs one of our support specialists, so I'd like to arrange for someone to contact you. " +
-    'Could you tell me your name, the best email to reach you, and a good time for a callback?',
+    'Could you tell me your name and a good time for a callback? Please type your email in the chat box below.',
   decline:
     "I'm not able to confirm that from RelayPay's approved information. I can connect you with a specialist who can help, if you'd like.",
   failure:
@@ -229,7 +231,7 @@ export class Conversation {
     }
 
     const verdict = this.judge(parsed.data, parsed.data.spoken_text, hits, triggers, sdkTurn.tools);
-    const finalText = this.finalSpokenText(parsed.data.spoken_text, verdict, sdkTurn.tools);
+    const finalText = this.finalSpokenText(parsed.data, verdict, sdkTurn.tools);
     stream.finish(finalText.text, finalText.appended);
     speaker.stopAcknowledging();
     for (const tool of sdkTurn.tools) for (const reference of referencesIn(tool)) this.knownReferences.add(reference);
@@ -342,23 +344,43 @@ export class Conversation {
   }
 
   // Checks that need the complete text: the escalation reference must be heard exactly, emails
-  // are never spoken. `appended` is what to add when the model's words were already streamed.
-  private finalSpokenText(modelText: string, verdict: Verdict, tools: readonly ToolEvent[]) {
+  // are never spoken, and on the voice path the reply closes with the line code decides on.
+  // `appended` is what to add when the model's words were already streamed.
+  private finalSpokenText(output: TurnOutput, verdict: Verdict, tools: readonly ToolEvent[]) {
     const enforced: string[] = [];
-    let text = verdict.override ?? modelText;
-    let appended: string | null = null;
+    let text = verdict.override ?? output.spoken_text;
+    const extra: string[] = [];
 
     const escalation = tools.find((tool) => tool.name === 'create_escalation' && tool.result?.ok === true)?.result;
     const escalationId = typeof escalation?.escalation_id === 'string' ? escalation.escalation_id : null;
     if (escalationId && !mentionsReference(text, escalationId) && typeof escalation?.follow_up_summary === 'string') {
-      appended = escalation.follow_up_summary;
-      text = verdict.override ? escalation.follow_up_summary : `${text} ${escalation.follow_up_summary}`;
+      extra.push(escalation.follow_up_summary);
+      if (verdict.override) text = '';
       enforced.push('escalation_reference_restored');
     }
-    const masked = maskEmails(text);
-    if (masked !== text) enforced.push('email_removed_from_speech');
-    if (masked.split(/\s+/).length > LONG_RESPONSE_WORDS) enforced.push('long_response_flagged');
-    return { text: masked, appended, enforced };
+    let safe = speechFromModel(text);
+    if (maskEmails(text) !== text) enforced.push('email_removed_from_speech');
+    if (withoutEndCallPhrase(text) !== text) enforced.push('end_call_phrase_removed');
+
+    if (this.channel === 'voice') {
+      const closing = closingLine({
+        askToType: output.ask_to_type,
+        endCall: output.end_call,
+        answerType: verdict.answerType,
+        text: [safe, ...extra].join(' '),
+        escalationCreatedThisTurn: escalationId !== null,
+      });
+      if (closing) {
+        extra.push(closing.line);
+        enforced.push(closing.note);
+        // The goodbye is the whole reply: the model's own farewell would only repeat it. A
+        // social reply is held until complete, so none of it has been spoken yet.
+        if (closing.note === 'call_ended_by_agent') safe = '';
+      }
+    }
+    const full = [safe, ...extra].filter(Boolean).join(' ');
+    if (full.split(/\s+/).length > LONG_RESPONSE_WORDS) enforced.push('long_response_flagged');
+    return { text: full, appended: extra.length > 0 ? extra.join(' ') : null, enforced };
   }
 
   private async recordOutcome(
@@ -375,6 +397,8 @@ export class Conversation {
         turn_index: reply.turn_index,
         answer_type: reply.answer_type,
         model_answer_type: modelOutput.answer_type,
+        model_end_call: modelOutput.end_call,
+        model_ask_to_type: modelOutput.ask_to_type,
         cited_chunk_ids: reply.cited_chunk_ids,
         model_cited_chunk_ids: modelOutput.cited_chunk_ids,
         enforced: reply.enforced,
@@ -521,7 +545,7 @@ class StreamingReply {
   finish(finalText: string, appended: string | null): void {
     if (this.mode === 'stream') {
       this.flushSentences(true);
-      if (appended) this.speaker.say(maskEmails(appended));
+      if (appended) this.speaker.say(appended);
       return;
     }
     if (this.mode === 'overridden') {
@@ -538,12 +562,12 @@ class StreamingReply {
     for (const match of this.pending.matchAll(pattern)) {
       if (match.index !== consumed) break;
       if (!all && match[1] === '' ) break;
-      this.speaker.say(maskEmails(match[0]));
+      this.speaker.say(speechFromModel(match[0]));
       consumed += match[0].length;
     }
     this.pending = this.pending.slice(consumed);
     if (all && this.pending.trim()) {
-      this.speaker.say(maskEmails(this.pending));
+      this.speaker.say(speechFromModel(this.pending));
       this.pending = '';
     }
   }
@@ -551,6 +575,13 @@ class StreamingReply {
 
 function maskEmails(text: string): string {
   return text.replace(EMAIL_PATTERN, 'the email on file');
+}
+
+// Everything the model writes passes through this before anyone hears or reads it: no emails,
+// references in their one written form (the model sometimes spells them out, "T K T dash zero…";
+// the voice layer spells them its own way), and never the phrase that makes Vapi hang up.
+function speechFromModel(text: string): string {
+  return withoutEndCallPhrase(normalizeSpokenReferences(maskEmails(text)).text);
 }
 
 const REFERENCE_FIELDS = ['ticket_id', 'escalation_id', 'transaction_id', 'payout_id'];
