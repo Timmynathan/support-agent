@@ -31,15 +31,17 @@ const el = {
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
 // `face` is what Relay's face does in that state (public/face.js).
 const STATES = {
-  loading: { status: 'Preparing…', label: 'Start Conversation', action: 'Start conversation', enabled: false, inCall: false, face: 'idle' },
-  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
-  ready: { status: '', label: 'Start Conversation', action: 'Start conversation', enabled: true, inCall: false, face: 'idle' },
-  connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, face: 'connecting' },
-  listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'listening' },
-  thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'thinking' },
-  speaking: { status: 'Relay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'speaking' },
-  ended: { status: 'Conversation ended', label: 'Start again', action: 'Start a new conversation', enabled: true, inCall: false, face: 'idle' },
-  error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false, face: 'idle' },
+// Labels are short because the call button sits in the chat bar. Each action contains its label
+// so the name a screen reader announces matches the visible word.
+  loading: { status: 'Preparing…', label: 'Call', action: 'Call Relay', enabled: false, inCall: false, face: 'idle' },
+  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Call unavailable', enabled: false, inCall: false, face: 'idle' },
+  ready: { status: '', label: 'Call', action: 'Call Relay', enabled: true, inCall: false, face: 'idle' },
+  connecting: { status: 'Connecting…', label: 'Cancel', action: 'Cancel call', enabled: true, inCall: true, face: 'connecting' },
+  listening: { status: 'Relay is listening', label: 'End', action: 'End call', enabled: true, inCall: true, face: 'listening' },
+  thinking: { status: 'Relay is thinking…', label: 'End', action: 'End call', enabled: true, inCall: true, face: 'thinking' },
+  speaking: { status: 'Relay is speaking', label: 'End', action: 'End call', enabled: true, inCall: true, face: 'speaking' },
+  ended: { status: 'Conversation ended', label: 'Call again', action: 'Call again', enabled: true, inCall: false, face: 'idle' },
+  error: { status: 'The call could not continue', label: 'Try again', action: 'Try the call again', enabled: true, inCall: false, face: 'idle' },
 };
 const LIVE_STATES = new Set(['listening', 'thinking', 'speaking']);
 
@@ -81,6 +83,8 @@ function setState(name) {
   const s = STATES[name];
   el.console.dataset.state = name;
   el.console.dataset.inCall = String(s.inCall);
+  el.callButton.dataset.state = name;
+  el.callButton.dataset.inCall = String(s.inCall);
   el.statusText.textContent = s.status;
   el.status.hidden = !s.status;
   el.callLabel.textContent = s.label;

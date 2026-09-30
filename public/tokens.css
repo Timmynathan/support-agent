@@ -79,8 +79,11 @@
   --bubble-max-width: 85%;
   --size-send: 1.875rem;
   --lede-width: 28rem;
-  --size-call: 4.5rem;
-  --size-mascot: min(11rem, 50vw);
+  --size-call: 2.25rem;
+  --call-ring-scale-x: 1.12;
+  --call-ring-scale-y: 1.5;
+  --duration-call-ring: 2.8s;
+  --size-mascot: min(17rem, 68vw);
   --size-mascot-shadow-height: 1.25rem;
   --mascot-shadow-width: calc(var(--size-mascot) * 0.42);
   --mascot-placeholder-inset: 18%;
