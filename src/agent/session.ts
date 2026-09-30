@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { query, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Query, type SDKMessage, type SDKPartialAssistantMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Channel } from '../shared/domain.js';
 import { SYSTEM_PROMPT, TURN_OUTPUT_SCHEMA } from './prompt.js';
@@ -29,6 +29,12 @@ export interface ToolEvent {
   isError: boolean;
 }
 
+// Live signals from a turn in progress, used by the voice path to speak before the turn ends.
+export interface TurnHooks {
+  onToolStart?(name: string): void;
+  onStructuredJson?(chunk: string): void;
+}
+
 export interface SdkTurn {
   ok: boolean;
   structuredOutput: unknown;
@@ -45,7 +51,8 @@ export interface SdkTurn {
 // messages. Starting them costs ~10 s, so it happens once at conversation start, never per turn.
 export class AgentSession {
   private readonly inbox = new MessageQueue();
-  private readonly waiters: Array<{ resolve: (turn: SdkTurn) => void; reject: (error: Error) => void }> = [];
+  private readonly waiters: Array<{ resolve: (turn: SdkTurn) => void; reject: (error: Error) => void; hooks: TurnHooks }> = [];
+  private readonly blockKinds = new Map<number, 'structured' | 'tool' | 'other'>();
   private readonly pendingTools = new Map<string, ToolEvent>();
   private turnTools: ToolEvent[] = [];
   private readonly query: Query;
@@ -66,6 +73,7 @@ export class AgentSession {
         settingSources: [],
         persistSession: false,
         maxTurns: MAX_TURNS,
+        includePartialMessages: true,
         env: agentProcessEnv(),
         mcpServers: {
           [MCP_SERVER_NAME]: {
@@ -81,9 +89,9 @@ export class AgentSession {
     void this.consume();
   }
 
-  ask(text: string): Promise<SdkTurn> {
+  ask(text: string, hooks: TurnHooks = {}): Promise<SdkTurn> {
     if (this.failure) return Promise.reject(this.failure);
-    const turn = new Promise<SdkTurn>((resolve, reject) => this.waiters.push({ resolve, reject }));
+    const turn = new Promise<SdkTurn>((resolve, reject) => this.waiters.push({ resolve, reject, hooks }));
     this.inbox.push({ type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null });
     return turn;
   }
@@ -95,6 +103,12 @@ export class AgentSession {
   close(): void {
     this.inbox.close();
     this.query.close();
+  }
+
+  // Tool calls of the turn in progress, with results as they arrive. The structured answer is
+  // generated after every tool has returned, so by the time it streams these are complete.
+  get liveTools(): readonly ToolEvent[] {
+    return this.turnTools;
   }
 
   get alive(): boolean {
@@ -111,6 +125,10 @@ export class AgentSession {
   }
 
   private handle(message: SDKMessage): void {
+    if (message.type === 'stream_event') {
+      this.handleStreamEvent(message.event);
+      return;
+    }
     if (message.type === 'assistant') {
       for (const block of message.message.content) {
         // StructuredOutput is the SDK's internal carrier for outputFormat, not a RelayPay tool.
@@ -150,9 +168,38 @@ export class AgentSession {
     });
   }
 
+  private handleStreamEvent(event: SDKPartialAssistantMessage['event']): void {
+    const hooks = this.waiters[0]?.hooks;
+    if (event.type === 'message_start') this.blockKinds.clear();
+    if (event.type === 'content_block_start') {
+      const block = event.content_block;
+      if (block.type !== 'tool_use') {
+        this.blockKinds.set(event.index, 'other');
+        return;
+      }
+      const structured = block.name === 'StructuredOutput';
+      this.blockKinds.set(event.index, structured ? 'structured' : 'tool');
+      if (!structured) callHook(() => hooks?.onToolStart?.(block.name.replace(`mcp__${MCP_SERVER_NAME}__`, '')));
+      return;
+    }
+    if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta' && this.blockKinds.get(event.index) === 'structured') {
+      const chunk = event.delta.partial_json;
+      callHook(() => hooks?.onStructuredJson?.(chunk));
+    }
+  }
+
   private fail(error: Error): void {
     this.failure = error;
     for (const waiter of this.waiters.splice(0)) waiter.reject(error);
+  }
+}
+
+// A failing hook (e.g. writing to a caller who hung up) must never kill the session's read loop.
+function callHook(invoke: () => void): void {
+  try {
+    invoke();
+  } catch (error) {
+    process.stderr.write(`turn hook failed: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 

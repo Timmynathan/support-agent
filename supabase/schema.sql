@@ -95,7 +95,7 @@ create table if not exists conversation_turns (
   turn_index          int not null check (turn_index >= 0),
   user_transcript     text not null,
   assistant_response  text,          -- null = no response produced (e.g. caller hung up)
-  answer_type         text check (answer_type in ('answer', 'clarify', 'escalate', 'decline', 'error')),
+  answer_type         text check (answer_type in ('answer', 'clarify', 'escalate', 'decline', 'social', 'error')),
   confidence_note     text,
   created_at          timestamptz not null default now(),
   unique (conversation_id, turn_index)

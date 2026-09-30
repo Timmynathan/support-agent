@@ -2,14 +2,16 @@ import { z } from 'zod';
 import type { RetrievalHit } from '../knowledge/retrieve.js';
 import type { TriggerHit } from './triggers.js';
 
-export const ANSWER_TYPES = ['answer', 'clarify', 'escalate', 'decline'] as const;
+export const ANSWER_TYPES = ['answer', 'clarify', 'escalate', 'decline', 'social'] as const;
 export type AnswerType = (typeof ANSWER_TYPES)[number];
 
+// Field order matters: the voice path streams spoken_text to the caller as it is generated, and
+// every check that decides WHETHER to speak it (answer type, citations) must arrive first.
 export const TurnOutput = z.object({
   answer_type: z.enum(ANSWER_TYPES),
-  spoken_text: z.string().min(1).max(1200),
   cited_chunk_ids: z.array(z.string()),
   confidence_note: z.string().max(300),
+  spoken_text: z.string().min(1).max(1200),
 });
 export type TurnOutput = z.infer<typeof TurnOutput>;
 
@@ -18,7 +20,7 @@ export const TURN_OUTPUT_SCHEMA = z.toJSONSchema(TurnOutput, { target: 'draft-7'
 
 // Tone: brand-direction.md (professional, calm, minimal, trustworthy). Paths:
 // support-decision-rules.md. Limits: escalation-rules.md and the KB "Communications" policy.
-// The rules that matter most are also enforced in code (see turn.ts); this prompt is the
+// The rules that matter most are also enforced in code (see conversation.ts); this prompt is the
 // first line, not the only one.
 export const SYSTEM_PROMPT = `You are RelayPay's voice support agent. RelayPay is a B2B platform for cross-border payments, multi-currency invoicing and contractor payouts, used by startups and SMEs across Africa, Europe and North America.
 
@@ -32,6 +34,7 @@ For every message, choose exactly one path:
 2. clarify: the request is vague or has more than one meaning. Ask one short question. For example, "My payment is stuck" means asking whether it is an outgoing payout, an incoming transfer or an invoice payment, and for the reference if they have one.
 3. escalate: the caller reports an account restriction or suspension, raises compliance or identity verification, asks for a dispute, refund or cancellation, is frustrated or urgent, asks for a person, or a lookup returns requires_escalation true. Say a specialist is needed and offer a callback. Ask for their name, email and preferred callback time only if you do not already have a verified account for them; if they are verified, ask only for a preferred time. If the caller gives two identifying details while you escalate (for example their name and company), verify them with lookup_customer first so their contact details come from the account record. Then call create_escalation and speak its follow_up_summary, including the reference. If its result has a message_for_agent, follow it. After escalating, do not keep trying to solve the issue.
 4. decline: the approved knowledge does not cover the question, or answering would mean guessing. Say you can't confirm that, and offer to connect them with a specialist.
+5. social: the caller is only greeting, thanking, saying goodbye or acknowledging, with no question. Reply in one short, warm sentence with no product, policy or account content and no numbers.
 
 If <escalation_required> is present, the escalate path is mandatory this turn.
 
@@ -50,7 +53,13 @@ Never:
 
 Put a one-line note on your certainty and what you relied on in confidence_note.`;
 
-export function composeTurnMessage(callerText: string, hits: RetrievalHit[], triggers: TriggerHit[]): string {
+// On a phone line the caller often pauses mid-sentence; the voice layer then sends the fragment,
+// and on the next turn resends it together with the rest. When the previous reply was cut off
+// before the caller heard it, the model is told the new message replaces the fragment.
+export function composeTurnMessage(callerText: string, hits: RetrievalHit[], triggers: TriggerHit[], supersedesCutOffTurn = false): string {
+  const supersedes = supersedesCutOffTurn
+    ? '<note>The caller kept talking before hearing your previous reply, so they never heard it. This message repeats and completes what they said. Respond to this message only.</note>\n'
+    : '';
   const knowledge =
     hits.length === 0
       ? 'NONE. No approved knowledge matched this message. You must not answer a product or policy question this turn; clarify, decline or escalate instead.'
@@ -59,5 +68,5 @@ export function composeTurnMessage(callerText: string, hits: RetrievalHit[], tri
     triggers.length === 0
       ? ''
       : `\n<escalation_required reason="${triggers.map((hit) => hit.kind).join(', ')}">The caller's message matched escalation triggers. Take the escalate path.</escalation_required>`;
-  return `<caller_said>${callerText}</caller_said>\n<approved_knowledge>\n${knowledge}\n</approved_knowledge>${escalation}`;
+  return `${supersedes}<caller_said>${callerText}</caller_said>\n<approved_knowledge>\n${knowledge}\n</approved_knowledge>${escalation}`;
 }

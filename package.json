@@ -13,8 +13,11 @@
     "tool": "tsx --env-file=.env scripts/tool.ts",
     "guards": "tsx --env-file=.env scripts/guard-tests.ts",
     "retrieval-check": "tsx scripts/retrieval-check.ts",
-    "server": "tsx --env-file=.env src/server/http.ts",
-    "scenarios": "tsx --env-file=.env scripts/run-scenarios.ts"
+    "server": "tsx --env-file=.env src/server/main.ts",
+    "scenarios": "tsx --env-file=.env scripts/run-scenarios.ts",
+    "voice-checks": "tsx scripts/voice-checks.ts",
+    "vapi-setup": "tsx --env-file=.env scripts/vapi-setup.ts",
+    "voice-sim": "tsx --env-file=.env scripts/voice-sim.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.284",

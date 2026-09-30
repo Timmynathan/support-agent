@@ -5,12 +5,12 @@ import { loadKnowledgeBase } from '../knowledge/knowledgeBase.js';
 import { buildRetriever, type RetrievalHit } from '../knowledge/retrieve.js';
 import * as log from './conversationLog.js';
 import { composeTurnMessage, TurnOutput, type AnswerType } from './prompt.js';
-import { AgentSession, type SdkTurn, type ToolEvent } from './session.js';
+import { AgentSession, type SdkTurn, type ToolEvent, type TurnHooks } from './session.js';
+import { StructuredSpeechParser } from './speechStream.js';
 import { detectTriggers, escalationCategory, type TriggerHit } from './triggers.js';
 
-// A voice caller hears silence while this runs. The first turn of a conversation that wasn't
-// pre-started also pays the ~10 s Claude process start, hence the headroom; Phase 3 starts the
-// session when the call connects so a caller never pays that.
+// A voice caller hears silence while this runs (minus the filler line). The first turn of a
+// conversation that wasn't pre-started also pays the ~10 s Claude process start.
 export const TURN_DEADLINE_MS = 20_000;
 
 // Fixed lines used when code overrides the model. Written once, here, so what a caller hears
@@ -25,13 +25,40 @@ export const LINES = {
     "I'm sorry, I'm having trouble checking that right now. Please try again in a moment, or reach RelayPay support through your dashboard.",
   timeout:
     "I'm sorry, this is taking longer than it should. Please try again in a moment, or reach RelayPay support through your dashboard.",
+  // Said when a voice turn has produced nothing after ACKNOWLEDGE_AFTER_MS. Neutral on purpose:
+  // it comes before answers, lookups and goodbyes alike.
+  acknowledge: 'One moment.',
+  // Said the moment a lookup starts, if nothing has been said yet.
+  checking: 'Let me check that for you.',
 } as const;
+
+// A 'social' reply (thanks, goodbye) skips the grounding rule, so it is held to a shape that
+// can't carry a claim: short, and with no digits or references in it.
+const SOCIAL_MAX_WORDS = 30;
+function isSafeSocialReply(text: string): boolean {
+  return text.split(/\s+/).length <= SOCIAL_MAX_WORDS && !/\d/.test(text) && !/\b(TXN|PAY|CUS|TKT|ESC)\b/i.test(text);
+}
 
 const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const LONG_RESPONSE_WORDS = 80;
 const AGENT_FALLBACK_LOG = resolve(import.meta.dirname, '../../logs/agent-fallback.jsonl');
 
 const retriever = buildRetriever(loadKnowledgeBase());
+
+// Where a turn's words go as they become available. The text endpoint has none (it returns the
+// whole reply); the voice path streams each sentence to Vapi.
+export interface SpeechSink {
+  say(text: string): void;
+  readonly closed: boolean;
+}
+
+export interface TurnInput {
+  // What the model and retrieval see (the voice path normalises spoken references into it).
+  text: string;
+  // What the caller actually said, when it differs; this is what the turn log records.
+  rawTranscript?: string;
+  sink?: SpeechSink;
+}
 
 export interface TurnReply {
   conversation_id: string;
@@ -43,45 +70,82 @@ export interface TurnReply {
   triggers: string[];
   enforced: string[];
   tools: Array<{ name: string; outcome: string }>;
-  timings_ms: { total: number; model_api: number | null };
+  timings_ms: { total: number; first_speech: number | null; model_api: number | null };
   cost_usd: number | null;
+}
+
+interface Verdict {
+  answerType: AnswerType;
+  citations: string[];
+  enforced: string[];
+  // Fixed line to say instead of the model's words, when a rule overrides the model.
+  override: string | null;
+  // The decision needs the full spoken text (reference check), so nothing may stream early.
+  needsFullText: boolean;
 }
 
 export class Conversation {
   private session: AgentSession;
   private turnIndex = 0;
   private lastCumulativeCost = 0;
+  private lastCumulativeApiMs = 0;
   private escalationRequired = false;
   private escalationCreated = false;
   private lastAnswerType: AnswerType | 'error' | null = null;
+  private interruptedTurn: number | null = null;
+  // The previous turn was cut off before the caller heard any of the actual reply.
+  private previousReplyUnheard = false;
   // References returned by successful tools earlier in this conversation (TKT-…, ESC-…, TXN-…).
   private readonly knownReferences = new Set<string>();
   private queue: Promise<unknown> = Promise.resolve();
   lastActivity = Date.now();
 
-  private constructor(readonly id: string, readonly channel: Channel) {
+  // The conversation row is written alongside the Claude process start, not before it: a slow
+  // database must not stop the ~10 s warm-up. The first turn retries the write if it failed.
+  private recorded: Promise<boolean>;
+
+  private constructor(readonly id: string, readonly channel: Channel, private readonly callerIdentifier: string | null) {
     this.session = new AgentSession(id, channel);
+    this.recorded = this.recordStart();
   }
 
-  static async start(id: string, channel: Channel, callerIdentifier: string | null): Promise<Conversation> {
-    await log.startConversation(id, channel, callerIdentifier);
-    return new Conversation(id, channel);
+  static start(id: string, channel: Channel, callerIdentifier: string | null): Promise<Conversation> {
+    return Promise.resolve(new Conversation(id, channel, callerIdentifier));
+  }
+
+  private async recordStart(): Promise<boolean> {
+    try {
+      await log.startConversation(this.id, this.channel, this.callerIdentifier);
+      return true;
+    } catch (error) {
+      await writeFallback({ stage: 'start_conversation', conversation_id: this.id, error: describe(error) });
+      return false;
+    }
   }
 
   // Turns in one conversation run strictly one after another, so SDK results pair with the
   // message that caused them.
-  handle(text: string): Promise<TurnReply> {
-    const run = this.queue.then(() => this.runTurn(text));
+  handle(input: TurnInput): Promise<TurnReply> {
+    const run = this.queue.then(() => this.runTurn(input));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
+  // The caller spoke over the agent or hung up mid-answer: stop generating, so the next turn
+  // (or the end of the call) isn't stuck behind a reply nobody will hear.
+  async interruptCurrentTurn(): Promise<void> {
+    this.interruptedTurn = this.turnIndex - 1;
+    await this.session.interrupt();
+  }
+
   // Returns false when the final status could not be saved (it goes to the fallback file instead).
-  async end(reason: 'caller_ended' | 'idle' | 'server_shutdown'): Promise<boolean> {
+  async end(reason: string): Promise<boolean> {
+    // Let a turn already in flight finish logging first, but never wait on it for long.
+    await Promise.race([this.queue, new Promise((resolve) => setTimeout(resolve, 5000))]);
     this.session.close();
     const status: log.FinalStatus = this.escalationCreated
       ? 'escalated'
-      : reason === 'idle' && this.turnIndex === 0
+      : this.turnIndex === 0
         ? 'abandoned'
         : this.lastAnswerType === 'error'
           ? 'failed'
@@ -98,18 +162,24 @@ export class Conversation {
     }
   }
 
-  private async runTurn(text: string): Promise<TurnReply> {
+  private async runTurn(input: TurnInput): Promise<TurnReply> {
     const startedAt = Date.now();
     this.lastActivity = startedAt;
     const turnIndex = this.turnIndex++;
+    const speaker = new Speaker(input.sink, startedAt);
+    const { text } = input;
+
+    if (!(await this.recorded)) this.recorded = this.recordStart();
+    await this.recorded;
 
     let turnId: number;
     try {
-      turnId = await log.startTurn(this.id, turnIndex, text);
+      turnId = await log.startTurn(this.id, turnIndex, input.rawTranscript ?? text);
     } catch (error) {
       // Fail closed, like the MCP tools: an answer that can't be logged isn't given.
       await writeFallback({ stage: 'start_turn', conversation_id: this.id, turn_index: turnIndex, error: describe(error) });
-      return this.errorReply(turnIndex, startedAt, LINES.failure, ['log_unavailable']);
+      speaker.say(LINES.failure);
+      return this.errorReply(turnIndex, startedAt, speaker, LINES.failure, ['log_unavailable']);
     }
 
     // A dead Claude process (crash, API failure at start-up) would fail every later turn; start a
@@ -124,114 +194,170 @@ export class Conversation {
     const hits = retriever.search(text);
     if (triggers.length > 0) this.escalationRequired = true;
 
-    try {
-      await log.logRetrieval(this.id, turnId, text, hits);
-      if (triggers.length > 0) {
-        await log.logEvent(this.id, 'escalation_triggered', `Triggers: ${triggers.map((t) => t.kind).join(', ')}`, {
-          turn_index: turnIndex,
-          triggers,
-          category: escalationCategory(triggers),
-        });
-      }
-    } catch (error) {
-      await writeFallback({ stage: 'log_retrieval', conversation_id: this.id, turn_index: turnIndex, error: describe(error) });
-      return this.failTurn(turnId, turnIndex, startedAt, LINES.failure, 'log_unavailable', error);
-    }
+    // The turn row above is the before-the-model record. Retrieval and trigger rows are written
+    // while the model runs, so a slow database doesn't add to the caller's silence; a failure
+    // goes to the fallback file with everything needed to replay it.
+    const sideLogs = this.logRetrievalAndTriggers(turnId, turnIndex, text, hits, triggers);
+
+    const stream = new StreamingReply(speaker, (meta) => this.judge(meta, null, hits, triggers, this.session.liveTools));
+    const hooks: TurnHooks = input.sink ? stream.hooks : {};
 
     let sdkTurn: SdkTurn | 'timeout';
     try {
-      sdkTurn = await withDeadline(this.session.ask(composeTurnMessage(text, hits, triggers)), TURN_DEADLINE_MS);
+      sdkTurn = await withDeadline(this.session.ask(composeTurnMessage(text, hits, triggers, this.previousReplyUnheard), hooks), TURN_DEADLINE_MS);
     } catch (error) {
-      return this.failTurn(turnId, turnIndex, startedAt, LINES.failure, 'agent_unavailable', error);
+      return this.failTurn(turnId, turnIndex, startedAt, speaker, LINES.failure, 'agent_unavailable', error);
     }
     if (sdkTurn === 'timeout') {
       await this.session.interrupt();
-      return this.failTurn(turnId, turnIndex, startedAt, LINES.timeout, 'turn_deadline', new Error(`no result within ${TURN_DEADLINE_MS} ms`));
+      return this.failTurn(turnId, turnIndex, startedAt, speaker, LINES.timeout, 'turn_deadline', new Error(`no result within ${TURN_DEADLINE_MS} ms`));
     }
 
     const turnCost = sdkTurn.cumulativeCostUsd - this.lastCumulativeCost;
     this.lastCumulativeCost = sdkTurn.cumulativeCostUsd;
+    // The SDK reports API time cumulatively across a streaming session.
+    const turnApiMs = sdkTurn.durationApiMs - this.lastCumulativeApiMs;
+    this.lastCumulativeApiMs = sdkTurn.durationApiMs;
     if (!sdkTurn.ok) {
-      return this.failTurn(turnId, turnIndex, startedAt, LINES.failure, `sdk_${sdkTurn.errorSubtype}`, new Error(sdkTurn.errors.join('; ') || 'agent turn failed'));
+      const stage = this.interruptedTurn === turnIndex ? 'caller_interrupted' : `sdk_${sdkTurn.errorSubtype}`;
+      return this.failTurn(turnId, turnIndex, startedAt, speaker, LINES.failure, stage, new Error(sdkTurn.errors.join('; ') || 'agent turn failed'));
     }
     const parsed = TurnOutput.safeParse(sdkTurn.structuredOutput);
     if (!parsed.success) {
-      return this.failTurn(turnId, turnIndex, startedAt, LINES.failure, 'invalid_structured_output', new Error(parsed.error.message));
+      return this.failTurn(turnId, turnIndex, startedAt, speaker, LINES.failure, 'invalid_structured_output', new Error(parsed.error.message));
     }
 
-    const checked = this.enforce(parsed.data, hits, triggers, sdkTurn.tools);
-    this.lastAnswerType = checked.answerType;
+    const verdict = this.judge(parsed.data, parsed.data.spoken_text, hits, triggers, sdkTurn.tools);
+    const finalText = this.finalSpokenText(parsed.data.spoken_text, verdict, sdkTurn.tools);
+    stream.finish(finalText.text, finalText.appended);
+    speaker.stopAcknowledging();
+    for (const tool of sdkTurn.tools) for (const reference of referencesIn(tool)) this.knownReferences.add(reference);
     if (sdkTurn.tools.some((tool) => tool.name === 'create_escalation' && tool.result?.ok === true)) this.escalationCreated = true;
+
+    const enforced = [...verdict.enforced, ...finalText.enforced, ...(input.sink ? stream.notes : [])];
+    if (this.interruptedTurn === turnIndex || input.sink?.closed) enforced.push('caller_interrupted');
+    this.previousReplyUnheard = enforced.includes('caller_interrupted') && !speaker.heardBeyondFiller();
+    this.lastAnswerType = verdict.answerType;
 
     const reply: TurnReply = {
       conversation_id: this.id,
       turn_index: turnIndex,
-      reply: checked.spokenText,
-      answer_type: checked.answerType,
-      cited_chunk_ids: checked.citations,
+      reply: input.sink ? speaker.text : finalText.text,
+      answer_type: verdict.answerType,
+      cited_chunk_ids: verdict.citations,
       retrieved_chunk_ids: hits.map((hit) => hit.chunk.id),
       triggers: triggers.map((hit) => hit.kind),
-      enforced: checked.enforced,
+      enforced,
       tools: sdkTurn.tools.map(toolSummary),
-      timings_ms: { total: Date.now() - startedAt, model_api: sdkTurn.durationApiMs },
+      timings_ms: { total: Date.now() - startedAt, first_speech: speaker.firstSpeechMs, model_api: turnApiMs },
       cost_usd: round(turnCost),
     };
 
-    await this.recordOutcome(turnId, reply, parsed.data, checked.confidenceNote, sdkTurn.modelUsage);
+    await sideLogs;
+    const note = enforced.length > 0 ? `${parsed.data.confidence_note} [code: ${enforced.join(', ')}]` : parsed.data.confidence_note;
+    await this.recordOutcome(turnId, reply, parsed.data, note, sdkTurn.modelUsage, input);
     return reply;
   }
 
-  // Code-side checks on what the model produced. Each override is recorded in `enforced`.
-  private enforce(output: TurnOutput, hits: RetrievalHit[], triggers: TriggerHit[], tools: ToolEvent[]) {
+  private async logRetrievalAndTriggers(turnId: number, turnIndex: number, text: string, hits: RetrievalHit[], triggers: TriggerHit[]): Promise<void> {
+    try {
+      await Promise.all([
+        log.logRetrieval(this.id, turnId, text, hits),
+        triggers.length === 0
+          ? Promise.resolve()
+          : log.logEvent(this.id, 'escalation_triggered', `Triggers: ${triggers.map((t) => t.kind).join(', ')}`, {
+              turn_index: turnIndex,
+              triggers,
+              category: escalationCategory(triggers),
+            }),
+      ]);
+    } catch (error) {
+      await writeFallback({
+        stage: 'log_retrieval',
+        conversation_id: this.id,
+        turn_index: turnIndex,
+        query: text,
+        chunk_ids: hits.map((hit) => hit.chunk.id),
+        triggers: triggers.map((hit) => hit.kind),
+        error: describe(error),
+      });
+    }
+  }
+
+  // The rules that decide what may be said. Called twice with the same logic: before speech on
+  // the voice path (spokenText null — only answer type and citations are known yet), and on the
+  // complete output. One definition, so the two paths can never disagree.
+  private judge(
+    output: { answer_type: string; cited_chunk_ids: string[] },
+    spokenText: string | null,
+    hits: RetrievalHit[],
+    triggers: TriggerHit[],
+    tools: readonly ToolEvent[],
+  ): Verdict {
     const enforced: string[] = [];
-    let answerType: AnswerType = output.answer_type;
-    let spokenText = output.spoken_text;
+    const modelType = (TurnOutput.shape.answer_type.options as readonly string[]).includes(output.answer_type) ? (output.answer_type as AnswerType) : 'decline';
 
     // Grounded or not at all: a citation only counts if that chunk was retrieved this turn.
     const retrievedIds = new Set(hits.map((hit) => hit.chunk.id));
     const citations = output.cited_chunk_ids.filter((id) => retrievedIds.has(id));
     if (citations.length < output.cited_chunk_ids.length) enforced.push('dropped_unretrieved_citations');
-    // A record the caller asked about, or an action taken, grounds an answer as well as a chunk does:
-    // either a tool succeeded this turn, or the answer names a reference an earlier tool returned.
-    const toolGrounded = tools.some(
-      (tool) => (tool.name.startsWith('lookup_') && tool.result?.found === true) || (tool.name.startsWith('create_') && tool.result?.ok === true),
-    );
-    const namesKnownReference = [...this.knownReferences].some((reference) => mentionsReference(output.spoken_text, reference));
-    for (const tool of tools) for (const reference of referencesIn(tool)) this.knownReferences.add(reference);
-    if (answerType === 'answer' && citations.length === 0 && !toolGrounded && !namesKnownReference) {
-      answerType = 'decline';
-      spokenText = LINES.decline;
-      enforced.push('ungrounded_answer_replaced_with_decline');
-    }
 
     // Escalation triggers — from the caller's words or from a record — are not optional.
     const recordNeedsHuman = tools.some((tool) => tool.result?.requires_escalation === true);
     if (recordNeedsHuman) this.escalationRequired = true;
-    const mustEscalate = (triggers.length > 0 || recordNeedsHuman || this.escalationRequired) && !this.escalationCreated;
-    if (mustEscalate && answerType !== 'escalate') {
-      answerType = 'escalate';
-      spokenText = LINES.escalate;
+    const mustEscalate = this.escalationRequired && !this.escalationCreated;
+    if (mustEscalate && modelType !== 'escalate') {
       enforced.push(recordNeedsHuman ? 'escalation_enforced_by_record' : 'escalation_enforced_by_trigger');
+      return { answerType: 'escalate', citations, enforced, override: LINES.escalate, needsFullText: false };
     }
 
-    // The caller must hear the escalation reference exactly as recorded; the tool's own summary
-    // is the fallback when the model paraphrased it away.
+    // Thanks and goodbyes need no grounding, but only in a shape that can't carry a claim. The
+    // check needs the words, so a social reply is never streamed before it is complete.
+    if (modelType === 'social') {
+      if (spokenText === null) return { answerType: modelType, citations, enforced, override: null, needsFullText: true };
+      if (!isSafeSocialReply(spokenText)) {
+        enforced.push('unsafe_social_reply_replaced_with_decline');
+        return { answerType: 'decline', citations, enforced, override: LINES.decline, needsFullText: false };
+      }
+      return { answerType: modelType, citations, enforced, override: null, needsFullText: false };
+    }
+
+    // A record the caller asked about, or an action taken, grounds an answer as well as a chunk
+    // does: a tool succeeded this turn, or the answer names a reference an earlier tool returned.
+    const toolGrounded = tools.some(
+      (tool) => (tool.name.startsWith('lookup_') && tool.result?.found === true) || (tool.name.startsWith('create_') && tool.result?.ok === true),
+    );
+    if (modelType === 'answer' && citations.length === 0 && !toolGrounded) {
+      if (spokenText === null && this.knownReferences.size > 0) {
+        return { answerType: modelType, citations, enforced, override: null, needsFullText: true };
+      }
+      const namesKnownReference = spokenText !== null && [...this.knownReferences].some((reference) => mentionsReference(spokenText, reference));
+      if (!namesKnownReference) {
+        enforced.push('ungrounded_answer_replaced_with_decline');
+        return { answerType: 'decline', citations, enforced, override: LINES.decline, needsFullText: false };
+      }
+    }
+    return { answerType: modelType, citations, enforced, override: null, needsFullText: false };
+  }
+
+  // Checks that need the complete text: the escalation reference must be heard exactly, emails
+  // are never spoken. `appended` is what to add when the model's words were already streamed.
+  private finalSpokenText(modelText: string, verdict: Verdict, tools: readonly ToolEvent[]) {
+    const enforced: string[] = [];
+    let text = verdict.override ?? modelText;
+    let appended: string | null = null;
+
     const escalation = tools.find((tool) => tool.name === 'create_escalation' && tool.result?.ok === true)?.result;
     const escalationId = typeof escalation?.escalation_id === 'string' ? escalation.escalation_id : null;
-    if (escalationId && !mentionsReference(spokenText, escalationId) && typeof escalation?.follow_up_summary === 'string') {
-      spokenText = escalation.follow_up_summary;
+    if (escalationId && !mentionsReference(text, escalationId) && typeof escalation?.follow_up_summary === 'string') {
+      appended = escalation.follow_up_summary;
+      text = verdict.override ? escalation.follow_up_summary : `${text} ${escalation.follow_up_summary}`;
       enforced.push('escalation_reference_restored');
     }
-
-    if (EMAIL_PATTERN.test(spokenText)) {
-      spokenText = spokenText.replace(EMAIL_PATTERN, 'the email on file');
-      enforced.push('email_removed_from_speech');
-    }
-    EMAIL_PATTERN.lastIndex = 0;
-    if (spokenText.split(/\s+/).length > LONG_RESPONSE_WORDS) enforced.push('long_response_flagged');
-
-    const confidenceNote = enforced.length > 0 ? `${output.confidence_note} [code: ${enforced.join(', ')}]` : output.confidence_note;
-    return { answerType, spokenText, citations, enforced, confidenceNote };
+    const masked = maskEmails(text);
+    if (masked !== text) enforced.push('email_removed_from_speech');
+    if (masked.split(/\s+/).length > LONG_RESPONSE_WORDS) enforced.push('long_response_flagged');
+    return { text: masked, appended, enforced };
   }
 
   private async recordOutcome(
@@ -240,6 +366,7 @@ export class Conversation {
     modelOutput: TurnOutput,
     confidenceNote: string,
     modelUsage: SdkTurn['modelUsage'],
+    input: TurnInput,
   ): Promise<void> {
     try {
       await log.finishTurn(turnId, reply.reply, reply.answer_type, confidenceNote);
@@ -254,39 +381,175 @@ export class Conversation {
         timings_ms: reply.timings_ms,
         cost_usd: reply.cost_usd,
         model_usage_cumulative: modelUsage,
+        ...(input.rawTranscript && input.rawTranscript !== input.text ? { raw_transcript: input.rawTranscript, normalized_text: input.text } : {}),
       });
     } catch (error) {
       await writeFallback({ stage: 'finish_turn', conversation_id: this.id, turn_index: reply.turn_index, reply, error: describe(error) });
     }
   }
 
-  private async failTurn(turnId: number, turnIndex: number, startedAt: number, line: string, stage: string, error: unknown): Promise<TurnReply> {
-    this.lastAnswerType = 'error';
+  private async failTurn(
+    turnId: number,
+    turnIndex: number,
+    startedAt: number,
+    speaker: Speaker,
+    line: string,
+    stage: string,
+    error: unknown,
+  ): Promise<TurnReply> {
+    speaker.stopAcknowledging();
+    this.previousReplyUnheard = stage === 'caller_interrupted' && !speaker.heardBeyondFiller();
+    // A caller who interrupted or hung up hears nothing more; the log says so instead.
+    if (stage !== 'caller_interrupted') speaker.say(line);
+    const heard = stage === 'caller_interrupted' ? `${speaker.text} [caller interrupted]`.trim() : speaker.text || line;
     try {
-      await log.finishTurn(turnId, line, 'error', `failed at ${stage}`);
+      await log.finishTurn(turnId, heard, 'error', `failed at ${stage}`);
       await log.logEvent(this.id, 'error', `Turn ${turnIndex} failed at ${stage}`, { turn_index: turnIndex, stage, error: describe(error) });
     } catch (logError) {
       await writeFallback({ stage, conversation_id: this.id, turn_index: turnIndex, error: describe(error), log_error: describe(logError) });
     }
-    return this.errorReply(turnIndex, startedAt, line, [stage]);
+    return this.errorReply(turnIndex, startedAt, speaker, line, [stage]);
   }
 
-  private errorReply(turnIndex: number, startedAt: number, line: string, enforced: string[]): TurnReply {
+  private errorReply(turnIndex: number, startedAt: number, speaker: Speaker, line: string, enforced: string[]): TurnReply {
     this.lastAnswerType = 'error';
     return {
       conversation_id: this.id,
       turn_index: turnIndex,
-      reply: line,
+      reply: speaker.text || line,
       answer_type: 'error',
       cited_chunk_ids: [],
       retrieved_chunk_ids: [],
       triggers: [],
       enforced,
       tools: [],
-      timings_ms: { total: Date.now() - startedAt, model_api: null },
+      timings_ms: { total: Date.now() - startedAt, first_speech: speaker.firstSpeechMs, model_api: null },
       cost_usd: null,
     };
   }
+}
+
+// On a voice turn, if nothing has been said by now the caller hears an acknowledgement, so the
+// time to first sound never depends on the database or the model.
+const ACKNOWLEDGE_AFTER_MS = 1200;
+
+// Everything the caller actually received in one turn, in order — this is what the turn log
+// records. Words that could not be delivered (the caller hung up or spoke over it) are not in it.
+class Speaker {
+  private readonly parts: string[] = [];
+  private ackTimer: NodeJS.Timeout | null = null;
+  firstSpeechMs: number | null = null;
+
+  constructor(private readonly sink: SpeechSink | undefined, private readonly startedAt: number) {
+    if (!sink) return;
+    this.ackTimer = setTimeout(() => {
+      this.ackTimer = null;
+      if (this.firstSpeechMs === null) this.say(LINES.acknowledge);
+    }, ACKNOWLEDGE_AFTER_MS);
+  }
+
+  stopAcknowledging(): void {
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = null;
+  }
+
+  say(text: string): void {
+    this.stopAcknowledging();
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (this.sink) {
+      if (this.sink.closed) return;
+      this.sink.say(`${trimmed} `);
+    }
+    this.parts.push(trimmed);
+    this.firstSpeechMs ??= Date.now() - this.startedAt;
+  }
+
+  get text(): string {
+    return this.parts.join(' ');
+  }
+
+  // True once the caller has heard any of the actual reply, not just "One moment."
+  heardBeyondFiller(): boolean {
+    return this.parts.some((part) => part !== LINES.acknowledge && part !== LINES.checking);
+  }
+}
+
+// Voice path: streams the model's spoken_text sentence by sentence once the pre-speech verdict
+// allows it, speaks a fixed line instead when it doesn't, and holds everything back when the
+// verdict can't be made until the text is complete.
+class StreamingReply {
+  private mode: 'waiting' | 'stream' | 'overridden' | 'buffer' = 'waiting';
+  private pending = '';
+  private checkingSaid = false;
+  readonly notes: string[] = [];
+  readonly hooks: TurnHooks;
+
+  constructor(private readonly speaker: Speaker, judgeMeta: (meta: { answer_type: string; cited_chunk_ids: string[] }) => Verdict) {
+    const parser = new StructuredSpeechParser(
+      (meta) => {
+        if (!meta) {
+          this.mode = 'buffer';
+          return;
+        }
+        const verdict = judgeMeta(meta);
+        if (verdict.override) {
+          this.mode = 'overridden';
+          this.speaker.say(verdict.override);
+        } else {
+          this.mode = verdict.needsFullText ? 'buffer' : 'stream';
+        }
+      },
+      (text) => {
+        if (this.mode !== 'stream') return;
+        this.pending += text;
+        this.flushSentences(false);
+      },
+    );
+    this.hooks = {
+      onToolStart: () => {
+        if (this.checkingSaid || this.speaker.firstSpeechMs !== null) return;
+        this.checkingSaid = true;
+        this.speaker.say(LINES.checking);
+      },
+      onStructuredJson: (chunk) => parser.feed(chunk),
+    };
+  }
+
+  // Called with the final, checked text. Whatever wasn't streamed is said now.
+  finish(finalText: string, appended: string | null): void {
+    if (this.mode === 'stream') {
+      this.flushSentences(true);
+      if (appended) this.speaker.say(maskEmails(appended));
+      return;
+    }
+    if (this.mode === 'overridden') {
+      if (appended) this.speaker.say(appended);
+      return;
+    }
+    if (this.mode === 'waiting') this.notes.push('no_streamed_output');
+    this.speaker.say(finalText);
+  }
+
+  private flushSentences(all: boolean): void {
+    const pattern = /[^.!?]*[.!?]+(\s+|$)/g;
+    let consumed = 0;
+    for (const match of this.pending.matchAll(pattern)) {
+      if (match.index !== consumed) break;
+      if (!all && match[1] === '' ) break;
+      this.speaker.say(maskEmails(match[0]));
+      consumed += match[0].length;
+    }
+    this.pending = this.pending.slice(consumed);
+    if (all && this.pending.trim()) {
+      this.speaker.say(maskEmails(this.pending));
+      this.pending = '';
+    }
+  }
+}
+
+function maskEmails(text: string): string {
+  return text.replace(EMAIL_PATTERN, 'the email on file');
 }
 
 const REFERENCE_FIELDS = ['ticket_id', 'escalation_id', 'transaction_id', 'payout_id'];
