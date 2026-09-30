@@ -138,7 +138,10 @@ function describe(error) {
 
 // The bubble still being spoken into (the caller's live words), and Relay's bubble for the
 // current turn; Relay's sentences in one turn join the same bubble.
-const chat = { callerBubble: null, relayBubble: null };
+// One caller bubble per turn: speech-to-text sends a sentence as several final pieces when the
+// caller pauses (spelling a reference, say), and they belong together until Relay replies.
+// `awaitingReply` is true from the caller's words until Relay's first reply to them.
+const chat = { callerBubble: null, callerText: '', relayBubble: null, awaitingReply: false };
 // Only follow new messages if the reader is already at the bottom: never yank them away from
 // something they scrolled up to read.
 const STICK_TO_BOTTOM_PX = 48;
@@ -189,22 +192,29 @@ function addDivider(text) {
   item.textContent = text;
   appendToLog(item);
   chat.callerBubble = null;
+  chat.callerText = '';
   chat.relayBubble = null;
+  chat.awaitingReply = false;
 }
 
 function onTranscript(message) {
   if (message.role === 'user') {
     const final = message.transcriptType === 'final';
-    if (chat.callerBubble) setBubbleText(chat.callerBubble, message.transcript, { partial: !final });
-    else chat.callerBubble = addBubble('caller', message.transcript, { partial: !final });
+    const text = [chat.callerText, message.transcript].filter(Boolean).join(' ');
+    if (chat.callerBubble) setBubbleText(chat.callerBubble, text, { partial: !final });
+    else chat.callerBubble = addBubble('caller', text, { partial: !final });
     if (!final) return;
-    chat.callerBubble = null;
+    chat.callerText = text;
     chat.relayBubble = null;
+    chat.awaitingReply = true;
     // The caller has finished a sentence: Relay is working on the answer until it speaks.
     if (state === 'listening') setState('thinking');
     return;
   }
   if (message.role === 'assistant' && message.transcriptType === 'final') {
+    chat.callerBubble = null;
+    chat.callerText = '';
+    chat.awaitingReply = false;
     if (!chat.relayBubble) {
       chat.relayBubble = addBubble('relay', message.transcript);
       return;
@@ -306,14 +316,21 @@ function attachEvents() {
     }, GREETING_FALLBACK_MS);
   });
   vapi.on('call-end', () => {
-    addDivider('Conversation ended');
-    const expected = !endedReason || /customer-ended-call|assistant-ended-call/.test(endedReason);
-    if (expected) {
+    // Vapi's reason often arrives after the call has ended, or not at all, so a caller left
+    // without a reply also counts as a call that went wrong — never a quiet "ended".
+    const unanswered = chat.awaitingReply;
+    const endedNormally = /customer-ended-call|assistant-ended-call/.test(endedReason ?? '');
+    const failed = endedReason ? !endedNormally : unanswered;
+    addDivider(failed ? 'Call dropped before Relay could answer' : 'Conversation ended');
+    if (!failed) {
       setState('ended');
       return;
     }
     setState('error');
-    showError(ENDED_REASONS[endedReason] ?? 'The call ended unexpectedly. Please try again.', `Vapi ended reason: ${endedReason}`);
+    showError(
+      ENDED_REASONS[endedReason] ?? 'The call ended before Relay could answer. Please try again.',
+      `Vapi ended reason: ${endedReason ?? 'not reported to the browser'}`,
+    );
   });
   vapi.on('speech-start', () => {
     if (state === 'listening' || state === 'thinking') setState('speaking');
