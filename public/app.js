@@ -18,22 +18,26 @@ const el = {
   errorText: document.getElementById('error-text'),
   errorDetailsWrap: document.getElementById('error-details-wrap'),
   errorDetails: document.getElementById('error-details'),
-  captionCaller: document.getElementById('caption-caller'),
-  captionAgent: document.getElementById('caption-agent'),
+  thread: document.getElementById('thread'),
+  threadToggle: document.getElementById('thread-toggle'),
+  chatLog: document.getElementById('chat-log'),
+  chatForm: document.getElementById('chat-form'),
+  chatInput: document.getElementById('chat-input'),
+  chatSend: document.getElementById('chat-send'),
   chips: [...document.querySelectorAll('.chip')],
 };
 
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
 // `face` is what Relay's face does in that state (public/face.js).
 const STATES = {
-  loading: { status: 'Preparing…', label: 'Start call', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
+  loading: { status: 'Preparing…', label: 'Start Conversation', action: 'Start conversation', enabled: false, inCall: false, face: 'idle' },
   unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, face: 'idle' },
-  ready: { status: 'Ready when you are', label: 'Start call', action: 'Start call', enabled: true, inCall: false, face: 'idle' },
+  ready: { status: 'Ready when you are', label: 'Start Conversation', action: 'Start conversation', enabled: true, inCall: false, face: 'idle' },
   connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, face: 'connecting' },
   listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'listening' },
   thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'thinking' },
   speaking: { status: 'Relay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true, face: 'speaking' },
-  ended: { status: 'Call ended', label: 'Call again', action: 'Start a new call', enabled: true, inCall: false, face: 'idle' },
+  ended: { status: 'Conversation ended', label: 'Start again', action: 'Start a new conversation', enabled: true, inCall: false, face: 'idle' },
   error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false, face: 'idle' },
 };
 const LIVE_STATES = new Set(['listening', 'thinking', 'speaking']);
@@ -51,7 +55,6 @@ const MIC_HINT_AFTER_MS = 6000;
 const SLOW_CONNECT_MS = 8000;
 const MIC_HEARD_LEVEL = 0.02;
 const GREETING_FALLBACK_MS = 8000;
-const CAPTION_SWAP_MS = 120;
 const MIC_HINT_TEXT = "I can't hear you yet. Check that your microphone is on, selected and not muted.";
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -83,7 +86,10 @@ function setState(name) {
   el.callButton.disabled = !s.enabled;
   el.muteButton.hidden = !LIVE_STATES.has(name);
   el.timer.hidden = !LIVE_STATES.has(name);
-  for (const chip of el.chips) chip.disabled = !(s.enabled || s.inCall) || name === 'connecting';
+  const canAsk = (s.enabled || s.inCall) && name !== 'connecting';
+  for (const chip of el.chips) chip.disabled = !canAsk;
+  el.chatInput.disabled = !canAsk;
+  el.chatSend.disabled = !canAsk;
   face?.setState(s.face);
   feedFaceLevel();
   if (!s.inCall) stopCallEffects();
@@ -122,43 +128,83 @@ function describe(error) {
   return readable ? `${readable} — ${raw}` : raw;
 }
 
-// ── Captions ───────────────────────────────────────────────────────
+// ── Conversation panel ─────────────────────────────────────────────
 
-// A new utterance crossfades in (blur bridges old and new); updates within one utterance, like
-// live partial words, change in place so the text doesn't flicker.
-function setCaption(node, text, { partial = false, tag = null, newUtterance = true } = {}) {
-  const apply = () => {
-    node.textContent = text;
-    if (tag) {
-      const span = document.createElement('span');
-      span.className = 'caption-tag';
-      span.textContent = tag;
-      node.append(span);
-    }
-    node.classList.toggle('is-partial', partial);
-    node.classList.remove('is-empty', 'is-changing');
-  };
-  if (!newUtterance || reduceMotion.matches) {
-    apply();
-    return;
-  }
-  node.classList.add('is-changing');
-  setTimeout(apply, CAPTION_SWAP_MS);
+// The bubble still being spoken into (the caller's live words), and Relay's bubble for the
+// current turn; Relay's sentences in one turn join the same bubble.
+const chat = { callerBubble: null, relayBubble: null };
+// Only follow new messages if the reader is already at the bottom: never yank them away from
+// something they scrolled up to read.
+const STICK_TO_BOTTOM_PX = 48;
+
+function nearBottom() {
+  const log = el.chatLog;
+  return log.scrollHeight - log.scrollTop - log.clientHeight < STICK_TO_BOTTOM_PX;
 }
 
-let callerUtteranceOpen = false;
+function appendToLog(node) {
+  const follow = nearBottom();
+  el.chatLog.append(node);
+  el.thread.hidden = false;
+  if (follow) el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
+function addBubble(role, text, { partial = false, tag = null } = {}) {
+  const item = document.createElement('li');
+  item.className = `chat-message chat-message--${role}`;
+  const who = document.createElement('span');
+  who.className = 'visually-hidden';
+  who.textContent = role === 'caller' ? 'You said: ' : 'Relay said: ';
+  const body = document.createElement('p');
+  body.className = 'chat-text';
+  item.append(who, body);
+  setBubbleText(item, text, { partial, tag });
+  appendToLog(item);
+  return item;
+}
+
+function setBubbleText(item, text, { partial = false, tag = null } = {}) {
+  const follow = nearBottom();
+  const body = item.querySelector('.chat-text');
+  body.textContent = text;
+  if (tag) {
+    const label = document.createElement('span');
+    label.className = 'chat-tag';
+    label.textContent = tag;
+    body.append(label);
+  }
+  item.classList.toggle('is-partial', partial);
+  if (follow) el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
+function addDivider(text) {
+  const item = document.createElement('li');
+  item.className = 'chat-divider';
+  item.textContent = text;
+  appendToLog(item);
+  chat.callerBubble = null;
+  chat.relayBubble = null;
+}
 
 function onTranscript(message) {
   if (message.role === 'user') {
     const final = message.transcriptType === 'final';
-    setCaption(el.captionCaller, message.transcript, { partial: !final, newUtterance: !callerUtteranceOpen });
-    callerUtteranceOpen = !final;
+    if (chat.callerBubble) setBubbleText(chat.callerBubble, message.transcript, { partial: !final });
+    else chat.callerBubble = addBubble('caller', message.transcript, { partial: !final });
+    if (!final) return;
+    chat.callerBubble = null;
+    chat.relayBubble = null;
     // The caller has finished a sentence: Relay is working on the answer until it speaks.
-    if (final && state === 'listening') setState('thinking');
+    if (state === 'listening') setState('thinking');
     return;
   }
   if (message.role === 'assistant' && message.transcriptType === 'final') {
-    setCaption(el.captionAgent, message.transcript);
+    if (!chat.relayBubble) {
+      chat.relayBubble = addBubble('relay', message.transcript);
+      return;
+    }
+    const current = chat.relayBubble.querySelector('.chat-text').textContent;
+    setBubbleText(chat.relayBubble, `${current} ${message.transcript}`);
   }
 }
 
@@ -217,8 +263,9 @@ function stopCallEffects() {
 // Adds a question to the live call as if the caller had said it. Before the call, it waits for
 // the greeting to finish so the question isn't talked over.
 function askTyped(question) {
-  setCaption(el.captionCaller, question, { tag: 'typed' });
-  callerUtteranceOpen = false;
+  addBubble('caller', question, { tag: 'typed' });
+  chat.callerBubble = null;
+  chat.relayBubble = null;
   vapi.send({ type: 'add-message', message: { role: 'user', content: question }, triggerResponseEnabled: true });
   if (state === 'listening') setState('thinking');
 }
@@ -230,7 +277,7 @@ function flushPendingQuestion() {
   askTyped(question);
 }
 
-async function onChip(question) {
+async function onAsk(question) {
   if (LIVE_STATES.has(state)) {
     askTyped(question);
     return;
@@ -245,6 +292,7 @@ function attachEvents() {
   vapi.on('call-start', () => {
     setState('listening');
     startCallEffects();
+    addDivider('Conversation started');
     greetingDone = false;
     greetingFallback = setTimeout(() => {
       greetingDone = true;
@@ -252,6 +300,7 @@ function attachEvents() {
     }, GREETING_FALLBACK_MS);
   });
   vapi.on('call-end', () => {
+    addDivider('Conversation ended');
     const expected = !endedReason || /customer-ended-call|assistant-ended-call/.test(endedReason);
     if (expected) {
       setState('ended');
@@ -354,5 +403,20 @@ async function init() {
 void loadFace();
 el.callButton.addEventListener('click', () => void onCallButton());
 el.muteButton.addEventListener('click', onMute);
-for (const chip of el.chips) chip.addEventListener('click', () => void onChip(chip.dataset.question));
+for (const chip of el.chips) chip.addEventListener('click', () => void onAsk(chip.dataset.question));
+// Hiding the thread keeps the bar; the log keeps filling, ready when it is shown again.
+el.threadToggle.addEventListener('click', () => {
+  const expanded = el.threadToggle.getAttribute('aria-expanded') === 'true';
+  el.threadToggle.setAttribute('aria-expanded', String(!expanded));
+  el.threadToggle.textContent = expanded ? 'Show' : 'Hide';
+  el.chatLog.hidden = expanded;
+  if (!expanded) el.chatLog.scrollTop = el.chatLog.scrollHeight;
+});
+el.chatForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const question = el.chatInput.value.trim();
+  if (!question || el.chatInput.disabled) return;
+  el.chatInput.value = '';
+  void onAsk(question);
+});
 void init();

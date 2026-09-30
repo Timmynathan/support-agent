@@ -19,6 +19,8 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-base);
   -webkit-font-smoothing: antialiased;
+  /* Room under the page content for the pinned dock, so it never covers the footer. */
+  padding-bottom: var(--dock-clearance);
 }
 
 button {
@@ -33,6 +35,16 @@ button {
 
 [hidden] {
   display: none !important;
+}
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: var(--border-width);
+  height: var(--border-width);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ── Header ─────────────────────────────────────────────────────── */
@@ -203,10 +215,8 @@ button {
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-2xs);
   font-weight: var(--font-weight-medium);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 /* ── Call controls ──────────────────────────────────────────────── */
@@ -367,52 +377,202 @@ button {
   }
 }
 
-/* ── Captions ───────────────────────────────────────────────────── */
+/* ── Conversation dock ──────────────────────────────────────────── */
 
-.captions {
-  padding: var(--space-5) var(--space-6);
+/* Pinned to the bottom, centred, from the first paint. A restrained treatment (brand: no
+   chat-heavy look): a pill bar, and a compact thread above it once there are messages. */
+.dock {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  z-index: 10;
+  width: min(var(--dock-width), calc(100% - var(--gutter) * 2));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-dock);
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-base);
+}
+
+.chat-input::placeholder {
+  color: var(--color-text-subtle);
+}
+
+.chat-input:focus-visible {
+  outline: none;
+}
+
+/* The focus ring moves to the whole bar, so the pill itself shows where you are typing. */
+.chat-bar:focus-within {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+.chat-input:disabled {
+  cursor: not-allowed;
+}
+
+.chat-send {
+  flex: none;
+  width: var(--size-send);
+  height: var(--size-send);
   display: grid;
-  gap: var(--space-4);
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) ease;
+}
+
+.chat-send svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.chat-send:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+.chat-send:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-send:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+}
+
+.thread {
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
-}
-
-.caption-who {
-  display: block;
-  margin-bottom: var(--space-1);
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.caption-text {
-  margin: 0;
+  box-shadow: var(--shadow-dock);
+  overflow: hidden;
   transition:
-    opacity var(--duration-fast) ease,
-    filter var(--duration-fast) ease;
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
 }
 
-/* Crossfade between utterances: a light blur makes the old and new line read as one change. */
-.caption-text.is-changing {
-  opacity: var(--opacity-changing);
-  filter: blur(var(--caption-blur));
+.thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
-.caption-text.is-partial {
+.thread-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.thread-toggle {
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
 }
 
-.caption-text.is-empty {
-  color: var(--color-text-subtle);
+@media (hover: hover) and (pointer: fine) {
+  .thread-toggle:hover {
+    background: var(--color-surface-muted);
+  }
 }
 
-.caption-tag {
+.chat-log {
+  max-height: var(--thread-height);
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-message {
+  max-width: var(--bubble-max-width);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
+}
+
+.chat-message--caller {
+  align-self: flex-end;
+  background: var(--color-bubble-caller);
+  color: var(--color-bubble-caller-text);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.chat-message--relay {
+  align-self: flex-start;
+  background: var(--color-surface-muted);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* The caller's words while they are still speaking. */
+.chat-message.is-partial {
+  opacity: var(--opacity-partial);
+}
+
+.chat-text {
+  margin: 0;
+}
+
+.chat-tag {
   margin-left: var(--space-2);
   color: var(--color-text-subtle);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-2xs);
+}
+
+.chat-divider {
+  align-self: center;
+  margin: var(--space-1) 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-2xs);
 }
 
 /* ── Suggestions ────────────────────────────────────────────────── */
@@ -535,8 +695,9 @@ button {
   .console[data-in-call='true'] .call-button svg {
     transform: none;
   }
-  .caption-text.is-changing {
-    filter: none;
+  .chat-message,
+  .thread {
+    transition-property: opacity;
   }
 }
 

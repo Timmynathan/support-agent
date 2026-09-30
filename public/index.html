@@ -36,7 +36,7 @@
     <main class="stage">
       <section class="hero enter">
         <p class="eyebrow">RelayPay voice support</p>
-        <h1 class="title">Hi, I'm Relay</h1>
+        <h1 class="title">Hi, I'm Relay!</h1>
         <p class="lede">How can I help you today?</p>
       </section>
 
@@ -63,7 +63,7 @@
           </svg>
         </button>
 
-        <p class="call-label" id="call-label" aria-hidden="true">Start call</p>
+        <p class="call-label" id="call-label" aria-hidden="true">Start Conversation</p>
 
         <p class="status" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
@@ -90,17 +90,6 @@
         </details>
       </section>
 
-      <section class="captions enter" aria-label="Live captions">
-        <div>
-          <span class="caption-who">You</span>
-          <p class="caption-text is-empty" id="caption-caller">What you say will appear here.</p>
-        </div>
-        <div>
-          <span class="caption-who">Relay</span>
-          <p class="caption-text is-empty" id="caption-agent" aria-live="polite">My replies will appear here as I speak.</p>
-        </div>
-      </section>
-
       <section class="suggestions enter" aria-labelledby="suggestions-title">
         <p class="suggestions-title" id="suggestions-title">Tap to ask without speaking</p>
         <ul class="chips">
@@ -110,6 +99,28 @@
         </ul>
       </section>
     </main>
+
+    <!-- Pinned to the bottom and shown from the first paint (no entrance animation). The thread
+         of messages appears above the bar once the conversation starts; typing asks Relay the
+         same way the question chips do. -->
+    <div class="dock">
+      <section class="thread" id="thread" aria-labelledby="thread-title" hidden>
+        <div class="thread-header">
+          <p class="thread-title" id="thread-title">Conversation</p>
+          <button type="button" class="thread-toggle" id="thread-toggle" aria-expanded="true" aria-controls="chat-log">Hide</button>
+        </div>
+        <ol class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="Conversation messages"></ol>
+      </section>
+      <form class="chat-bar" id="chat-form">
+        <label class="visually-hidden" for="chat-input">Type a question for Relay</label>
+        <input id="chat-input" class="chat-input" type="text" autocomplete="off" maxlength="300" placeholder="Type a question for Relay…" disabled />
+        <button type="submit" class="chat-send" id="chat-send" aria-label="Send question" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+      </form>
+    </div>
 
     <footer class="footnote">
       Conversations are logged so RelayPay support can follow up. Please don't say full card or bank account numbers.
