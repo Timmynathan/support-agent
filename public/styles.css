@@ -116,7 +116,7 @@ button {
   padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
@@ -128,12 +128,12 @@ button {
 }
 
 .trust-badge {
-  fill: var(--color-primary);
+  fill: var(--color-verified);
 }
 
 .trust-check {
   fill: none;
-  stroke: var(--color-on-primary);
+  stroke: var(--color-on-verified);
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;

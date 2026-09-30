@@ -16,6 +16,8 @@
   --color-primary-hover: #0f2b57;
   --color-accent: #0f7a84;
   --color-accent-soft: #dcf0f1;
+  --color-verified: #2a73e6; /* the verified-badge tick */
+  --color-on-verified: #ffffff;
   --color-danger: #b42318;
   --color-danger-hover: #912018;
   --color-danger-soft: #fdeceb;
