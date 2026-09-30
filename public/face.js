@@ -13,13 +13,14 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 const MODEL_URL = '/models/lee-perry-smith.glb';
 
 // Head motion per state. The face eases toward each state's targets every frame, so every
-// change is continuous and can be interrupted mid-way.
+// change is continuous and can be interrupted mid-way. `lipPress` closes the scan's slightly
+// parted lips: pressed shut while idle (no call), relaxed once a call starts.
 const STATE_PARAMS = {
-  idle: { sway: 0.14, swaySpeed: 0.35, nod: 0.03, tilt: 0, turn: 0, jawGain: 0 },
-  connecting: { sway: 0.1, swaySpeed: 0.9, nod: 0.04, tilt: 0, turn: 0, jawGain: 0 },
-  listening: { sway: 0.05, swaySpeed: 0.4, nod: 0.02, tilt: 0.08, turn: 0, jawGain: 0 },
-  thinking: { sway: 0.06, swaySpeed: 0.5, nod: 0.02, tilt: -0.04, turn: 0.32, jawGain: 0 },
-  speaking: { sway: 0.07, swaySpeed: 0.6, nod: 0.05, tilt: 0.02, turn: 0, jawGain: 1 },
+  idle: { sway: 0.14, swaySpeed: 0.35, nod: 0.03, tilt: 0, turn: 0, jawGain: 0, lipPress: 1 },
+  connecting: { sway: 0.1, swaySpeed: 0.9, nod: 0.04, tilt: 0, turn: 0, jawGain: 0, lipPress: 0 },
+  listening: { sway: 0.05, swaySpeed: 0.4, nod: 0.02, tilt: 0.08, turn: 0, jawGain: 0, lipPress: 0 },
+  thinking: { sway: 0.06, swaySpeed: 0.5, nod: 0.02, tilt: -0.04, turn: 0.32, jawGain: 0, lipPress: 0 },
+  speaking: { sway: 0.07, swaySpeed: 0.6, nod: 0.05, tilt: 0.02, turn: 0, jawGain: 1, lipPress: 0 },
 };
 
 const HEAD_HEIGHT = 2.3;
@@ -65,7 +66,8 @@ const FEATURES = {
 // The scan's lips are one closed surface, so the mouth opens by splitting at the seam: the
 // lower lip and jaw drop, the upper lip lifts a little, and an almond opening is cut between
 // them that grows with the voice — hollow, like the eyes, as on a steel mask.
-const MOUTH = { jawDrop: 0.13, lipLift: 0.012, jawBack: 0.3, holeHalfHeight: 0.03 };
+// `press` is a negative opening: the jaw rises and the upper lip drops until the lips meet.
+const MOUTH = { jawDrop: 0.13, lipLift: 0.012, jawBack: 0.3, holeHalfHeight: 0.03, press: 0.35 };
 // The scan's eyes are closed; the lids are cut open as almond-shaped holes (like the hollow
 // eyes of a mask), which also lets them blink.
 const BLINK = { everyMin: 3.5, everyMax: 6.5, duration: 0.16 };
@@ -513,7 +515,7 @@ export async function createFace(container, { reduceMotion }) {
     for (const key of Object.keys(current)) current[key] += (target[key] - current[key]) * STATE_EASING;
     level += (levelTarget - level) * LEVEL_EASING;
     time += dt;
-    setMouth(Math.min(1, level * VOICE_TO_MOUTH) * current.jawGain);
+    setMouth(Math.min(1, level * VOICE_TO_MOUTH) * current.jawGain - current.lipPress * MOUTH.press);
     setEyes(eyeOpenness(time));
     pose(time);
     renderer.render(scene, camera);
@@ -522,7 +524,7 @@ export async function createFace(container, { reduceMotion }) {
   // Under reduced motion the face is drawn once per state: present, but still.
   function renderStill() {
     Object.assign(current, target);
-    setMouth(0);
+    setMouth(-current.lipPress * MOUTH.press);
     setEyes(1);
     head.rotation.set(target.tilt, target.turn * 0.5, 0);
     head.position.y = 0;
