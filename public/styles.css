@@ -51,7 +51,7 @@ button {
 
 .topbar {
   width: 100%;
-  padding: var(--space-4) var(--space-6) 0;
+  padding: var(--space-3) var(--space-6) 0;
   display: flex;
   align-items: center;
 }
@@ -74,12 +74,14 @@ button {
 
 .stage {
   width: 100%;
+  /* A grid item otherwise grows to fit the one-line topic row, widening the whole page. */
+  min-width: 0;
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: var(--space-2) var(--gutter) var(--space-6);
+  padding: 0 var(--gutter) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 /* Page entrance: seen once per visit, so a short stagger is allowed. Never blocks input. */
@@ -140,7 +142,7 @@ button {
 }
 
 .title {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-1);
   font-size: var(--font-size-title);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
@@ -215,13 +217,17 @@ button {
   padding: 0;
   list-style: none;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
+  flex-wrap: nowrap;
+  justify-content: safe center;
+  gap: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .topics li {
-  padding: var(--space-1) var(--space-3);
+  flex: none;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-2);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
   color: var(--color-text-muted);
@@ -233,9 +239,19 @@ button {
 
 .console {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
+}
+
+.console .pill {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+}
+
+.console .hint {
+  flex-basis: 100%;
 }
 
 /* A pill at the end of the chat bar: the one primary action on the page. */
