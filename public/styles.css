@@ -255,10 +255,28 @@ button {
   font-size: var(--font-size-xs);
 }
 
-/* The caller's own "I'm finished" — outlined in the brand colour so it reads as the next step. */
+/* The caller's own "I'm finished": a solid teal pill, the one filled control in the row, so it
+   reads as the next step. Fades up when it appears, like Mute. */
 .console .done {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-accent);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) ease;
+  @starting-style {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .console .done:hover {
+    background: var(--color-accent-hover);
+  }
 }
 
 .console .hint {
@@ -764,7 +782,8 @@ button {
   .call-button svg,
   .pill,
   .chip,
-  .mute {
+  .mute,
+  .console .done {
     transition-property: background-color, border-color, opacity;
   }
   .call-button:active:not(:disabled),

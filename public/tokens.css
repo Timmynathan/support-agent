@@ -16,6 +16,9 @@
   --color-primary-hover: #0f2b57;
   --color-accent: #0f7a84;
   --color-accent-soft: #dcf0f1;
+  --color-accent-hover: #0c646c;
+  --color-on-accent: #ffffff;
+  --shadow-accent: 0 4px 14px rgb(15 122 132 / 0.35);
   --color-verified: #2a73e6; /* the verified-badge tick */
   --color-on-verified: #ffffff;
   --color-danger: #b42318;
@@ -128,6 +131,9 @@
     --color-primary-hover: #a9c3ee;
     --color-accent: #5cc3cb;
     --color-accent-soft: #15333a;
+    --color-accent-hover: #7fd3d9;
+    --color-on-accent: #0b1220;
+    --shadow-accent: 0 4px 14px rgb(0 0 0 / 0.45);
     --color-danger: #f28b82;
     --color-danger-hover: #f5a39c;
     --color-danger-soft: #3a1f22;
