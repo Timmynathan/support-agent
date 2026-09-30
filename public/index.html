@@ -77,6 +77,14 @@
           <span id="mute-label">Mute</span>
         </button>
 
+        <!-- Ends the caller's turn now instead of waiting for Vapi to notice the silence. -->
+        <button type="button" class="pill done" id="done-button" hidden disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+          Done speaking
+        </button>
+
         <p class="hint" id="mic-hint" hidden>I can't hear you yet. Check that your microphone is on, selected and not muted.</p>
       </section>
 

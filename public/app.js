@@ -13,6 +13,7 @@ const el = {
   timer: document.getElementById('timer'),
   muteButton: document.getElementById('mute-button'),
   muteLabel: document.getElementById('mute-label'),
+  doneButton: document.getElementById('done-button'),
   micHint: document.getElementById('mic-hint'),
   mascot: document.getElementById('mascot'),
   error: document.getElementById('error'),
@@ -58,6 +59,10 @@ const MIC_HINT_AFTER_MS = 6000;
 const SLOW_CONNECT_MS = 8000;
 const MIC_HEARD_LEVEL = 0.02;
 const GREETING_FALLBACK_MS = 8000;
+// "Done speaking": Vapi's web SDK has no end-of-turn command, so the button mutes the mic and
+// Vapi's endpointing hears the silence at once. The mic comes back when Relay starts to reply
+// (so the caller can still interrupt), or after this long if no reply starts.
+const DONE_UNMUTE_FALLBACK_MS = 10000;
 const MIC_HINT_TEXT = "I can't hear you yet. Check that your microphone is on, selected and not muted.";
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -74,6 +79,8 @@ let pendingQuestion = null;
 let greetingDone = false;
 let greetingFallback = null;
 let face = null;
+let doneHold = null;
+let doneMutedMic = false;
 const level = { mic: 0, agent: 0 };
 
 // ── State ──────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ function setState(name) {
   el.callButton.setAttribute('aria-label', s.action);
   el.callButton.disabled = !s.enabled;
   el.muteButton.hidden = !LIVE_STATES.has(name);
+  refreshDoneButton();
   el.timer.hidden = !LIVE_STATES.has(name);
   const canAsk = (s.enabled || s.inCall) && name !== 'connecting';
   for (const chip of el.chips) chip.disabled = !canAsk;
@@ -203,6 +211,7 @@ function onTranscript(message) {
     const text = [chat.callerText, message.transcript].filter(Boolean).join(' ');
     if (chat.callerBubble) setBubbleText(chat.callerBubble, text, { partial: !final });
     else chat.callerBubble = addBubble('caller', text, { partial: !final });
+    refreshDoneButton();
     if (!final) return;
     chat.callerText = text;
     chat.relayBubble = null;
@@ -215,6 +224,7 @@ function onTranscript(message) {
     chat.callerBubble = null;
     chat.callerText = '';
     chat.awaitingReply = false;
+    refreshDoneButton();
     if (!chat.relayBubble) {
       chat.relayBubble = addBubble('relay', message.transcript);
       return;
@@ -272,6 +282,34 @@ function stopCallEffects() {
   el.micHint.hidden = true;
   el.muteButton.setAttribute('aria-pressed', 'false');
   el.muteLabel.textContent = 'Mute';
+  releaseDoneHold();
+}
+
+// ── Done speaking ──────────────────────────────────────────────────
+
+// Shown while it is the caller's turn and they have said something Relay hasn't answered yet.
+function refreshDoneButton() {
+  const callersTurn = state === 'listening' || state === 'thinking';
+  el.doneButton.hidden = !callersTurn || !chat.callerBubble || doneHold !== null;
+  el.doneButton.disabled = el.doneButton.hidden;
+}
+
+function onDone() {
+  if (!vapi || doneHold) return;
+  // Only unmute later what this button muted: a caller who muted themselves stays muted.
+  doneMutedMic = !vapi.isMuted();
+  if (doneMutedMic) vapi.setMuted(true);
+  doneHold = setTimeout(releaseDoneHold, DONE_UNMUTE_FALLBACK_MS);
+  if (state === 'listening') setState('thinking');
+  refreshDoneButton();
+}
+
+function releaseDoneHold() {
+  if (doneHold) clearTimeout(doneHold);
+  doneHold = null;
+  if (doneMutedMic && vapi?.isMuted()) vapi.setMuted(false);
+  doneMutedMic = false;
+  refreshDoneButton();
 }
 
 // ── Typed questions ────────────────────────────────────────────────
@@ -333,6 +371,7 @@ function attachEvents() {
     );
   });
   vapi.on('speech-start', () => {
+    releaseDoneHold();
     if (state === 'listening' || state === 'thinking') setState('speaking');
   });
   vapi.on('speech-end', () => {
@@ -401,6 +440,16 @@ async function onCallButton() {
 }
 
 function onMute() {
+  // Pressing Mute while "Done speaking" holds the mic: the caller now wants it muted for good.
+  if (doneHold) {
+    clearTimeout(doneHold);
+    doneHold = null;
+    doneMutedMic = false;
+    el.muteLabel.textContent = 'Unmute';
+    el.muteButton.setAttribute('aria-pressed', 'true');
+    refreshDoneButton();
+    return;
+  }
   const muted = !vapi.isMuted();
   vapi.setMuted(muted);
   el.muteLabel.textContent = muted ? 'Unmute' : 'Mute';
@@ -426,6 +475,7 @@ async function init() {
 void loadFace();
 el.callButton.addEventListener('click', () => void onCallButton());
 el.muteButton.addEventListener('click', onMute);
+el.doneButton.addEventListener('click', onDone);
 for (const chip of el.chips) chip.addEventListener('click', () => void onAsk(chip.dataset.question));
 // Hiding the thread keeps the bar; the log keeps filling, ready when it is shown again.
 el.threadToggle.addEventListener('click', () => {

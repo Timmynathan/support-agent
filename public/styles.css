@@ -250,6 +250,12 @@ button {
   font-size: var(--font-size-xs);
 }
 
+/* The caller's own "I'm finished" — outlined in the brand colour so it reads as the next step. */
+.console .done {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .console .hint {
   flex-basis: 100%;
 }
