@@ -1,60 +1,115 @@
-/* Design tokens — the only file with raw colour and size values. brand-direction.md:
-   deep blue primary, teal accent, off-white background; Inter or the system stack. */
+/* Design tokens — the only file with raw colour, size and timing values.
+   Brand (assets/brand-direction.md): deep blue primary, teal accent, off-white background,
+   Inter or the system stack; calm, minimal, trustworthy; no gradients, neon or emojis.
+   Motion (Emil Kowalski's design engineering): strong custom curves, UI motion under 300ms. */
 :root {
-  --color-primary: #173a6b;
-  --color-primary-hover: #0f2c55;
-  --color-accent: #0f7a84;
-  --color-bg: #f6f7f9;
+  /* Colour */
+  --color-bg: #f5f6f8;
   --color-surface: #ffffff;
-  --color-text: #1b2230;
-  --color-text-muted: #5a6475;
-  --color-border: #d9dee6;
-  --color-danger: #9b2c2c;
-  --color-danger-bg: #fbeeee;
-  --color-focus: #0f7a84;
+  --color-surface-muted: #eef1f5;
+  --color-border: #e2e6ec;
+  --color-text: #111827;
+  --color-text-muted: #5b6474;
+  --color-text-subtle: #8a93a3;
+  --color-primary: #16376b;
+  --color-primary-hover: #0f2b57;
+  --color-primary-soft: #e3eaf5;
+  --color-accent: #0f7a84;
+  --color-accent-soft: #dcf0f1;
+  --color-danger: #b42318;
+  --color-danger-hover: #912018;
+  --color-danger-soft: #fdeceb;
+  --color-warning-text: #8a5a00;
+  --color-warning-soft: #fff4dc;
   --color-on-primary: #ffffff;
+  --color-focus: #0f7a84;
 
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 12px 32px rgb(16 24 40 / 0.06);
+  --shadow-call: 0 10px 28px rgb(22 55 107 / 0.28);
+  --shadow-call-danger: 0 10px 28px rgb(180 35 24 / 0.26);
+
+  /* Type */
   --font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
-  --font-size-small: 0.875rem;
-  --font-size-title: 1.375rem;
+  --font-size-lg: 1.0625rem;
+  --font-size-title: clamp(1.625rem, 1.3rem + 1.4vw, 2.125rem);
   --font-weight-regular: 400;
   --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-tight: 1.2;
+  --line-height-base: 1.55;
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.08em;
 
+  /* Space */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
+  --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-
-  --radius: 0.5rem;
-  --border-width: 1px;
-  --focus-width: 3px;
-  --content-width: 30rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
   --gutter: 1rem;
-  --transition: 150ms ease;
+
+  /* Size */
+  --content-width: 34rem;
+  --lede-width: 28rem;
+  --size-call: 5.5rem;
+  --size-ring-gap: 0.625rem;
+  --size-icon: 1.625rem;
+  --size-icon-sm: 1.125rem;
+  --size-dot: 0.5rem;
+  --radius-sm: 0.5rem;
+  --radius: 0.75rem;
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+  --border-width: 1px;
+  --spinner-width: 2px;
+  --focus-width: 3px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --duration-press: 160ms;
+  --duration-fast: 200ms;
+  --duration-base: 250ms;
+  --duration-enter: 300ms;
+  --duration-spin: 800ms;
+  --stagger: 60ms;
+  --press-scale: 0.97;
+  --enter-offset: 0.5rem;
+  --caption-blur: 2px;
+  --opacity-disabled: 0.55;
+  --opacity-changing: 0.4;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-primary: #7fa6e0;
-    --color-primary-hover: #9bbbea;
-    --color-accent: #5cc0c8;
-    --color-bg: #11161f;
-    --color-surface: #1a212d;
-    --color-text: #e6eaf0;
-    --color-text-muted: #a3adbd;
-    --color-border: #2e3847;
-    --color-danger: #f0a3a3;
-    --color-danger-bg: #3a1f23;
-    --color-focus: #5cc0c8;
-    --color-on-primary: #0d1320;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --transition: 0ms;
+    --color-bg: #0e131b;
+    --color-surface: #161d28;
+    --color-surface-muted: #1d2633;
+    --color-border: #2a3444;
+    --color-text: #e8ecf2;
+    --color-text-muted: #a4aebd;
+    --color-text-subtle: #7b8698;
+    --color-primary: #8fb0e6;
+    --color-primary-hover: #a9c3ee;
+    --color-primary-soft: #1d2b43;
+    --color-accent: #5cc3cb;
+    --color-accent-soft: #15333a;
+    --color-danger: #f28b82;
+    --color-danger-hover: #f5a39c;
+    --color-danger-soft: #3a1f22;
+    --color-warning-text: #f2c46d;
+    --color-warning-soft: #33290f;
+    --color-on-primary: #0b1220;
+    --color-focus: #5cc3cb;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.35);
+    --shadow-call: 0 10px 28px rgb(0 0 0 / 0.45);
+    --shadow-call-danger: 0 10px 28px rgb(0 0 0 / 0.45);
   }
 }

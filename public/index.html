@@ -3,42 +3,94 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>RelayPay Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <main class="page">
-      <p class="logo">RelayPay</p>
-      <section class="panel" aria-labelledby="title">
-        <h1 id="title" class="logo" hidden>RelayPay voice support</h1>
-        <p class="intro">Speak with RelayPay support about payments, payouts, invoicing and your account.</p>
+    <header class="topbar">
+      <span class="wordmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 7h11l-3-3M20 17H9l3 3" />
+        </svg>
+        RelayPay
+      </span>
+      <span class="tag">Support</span>
+    </header>
 
-        <p class="status" id="status" data-state="loading" role="status" aria-live="polite">
+    <main class="stage">
+      <section class="hero enter">
+        <p class="eyebrow">Voice support</p>
+        <h1 class="title">How can we help today?</h1>
+        <p class="lede">Ask about payments, payouts, invoicing or your account. If it needs a specialist, we'll arrange one.</p>
+      </section>
+
+      <section class="console card enter" id="console" data-state="loading" data-in-call="false" aria-label="Call">
+        <div class="call">
+          <span class="level-ring" id="level-ring" aria-hidden="true"></span>
+          <span class="spinner" aria-hidden="true"></span>
+          <button type="button" class="call-button" id="call-button" disabled aria-describedby="status-text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" />
+            </svg>
+          </button>
+        </div>
+
+        <p class="call-label" id="call-label" aria-hidden="true">Start call</p>
+
+        <p class="status" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="status-text">Loading…</span>
+          <span id="status-text">Preparing…</span>
+          <span class="timer" id="timer" hidden>0:00</span>
         </p>
 
-        <div class="actions">
-          <button type="button" class="button-primary" id="call-button" disabled>Start call</button>
-          <button type="button" class="button-secondary" id="mute-button" hidden aria-pressed="false">Mute</button>
-        </div>
+        <button type="button" class="pill mute" id="mute-button" aria-pressed="false" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+          </svg>
+          <span id="mute-label">Mute</span>
+        </button>
 
-        <div class="error" id="error" role="alert" hidden>
-          <p id="error-text"></p>
-          <details id="error-details-wrap" hidden>
-            <summary>Technical details</summary>
-            <p id="error-details"></p>
-          </details>
-        </div>
+        <p class="hint" id="mic-hint" hidden>We can't hear you yet. Check that your microphone is on, selected and not muted.</p>
+      </section>
 
-        <div class="caption" id="caption" hidden>
-          <p class="caption-label">Agent said</p>
-          <p class="caption-text" id="caption-text" aria-live="polite"></p>
+      <section class="error" id="error" role="alert" hidden>
+        <p id="error-text"></p>
+        <details id="error-details-wrap" hidden>
+          <summary>Technical details</summary>
+          <code id="error-details"></code>
+        </details>
+      </section>
+
+      <section class="captions card enter" aria-label="Live captions">
+        <div>
+          <span class="caption-who">You</span>
+          <p class="caption-text is-empty" id="caption-caller">What you say will appear here.</p>
+        </div>
+        <div>
+          <span class="caption-who">RelayPay</span>
+          <p class="caption-text is-empty" id="caption-agent" aria-live="polite">Replies will appear here as they're spoken.</p>
         </div>
       </section>
-      <p class="note">This call uses your microphone. Please don't say full card or bank account numbers.</p>
+
+      <section class="suggestions enter" aria-labelledby="suggestions-title">
+        <p class="suggestions-title" id="suggestions-title">Try asking — tap to ask without speaking</p>
+        <ul class="chips">
+          <li><button type="button" class="chip" data-question="What fees does RelayPay charge for international payments?">What fees do you charge?</button></li>
+          <li><button type="button" class="chip" data-question="How long do international payouts take?">How long do payouts take?</button></li>
+          <li><button type="button" class="chip" data-question="Can you check transaction TXN-9001?">Check transaction TXN-9001</button></li>
+        </ul>
+      </section>
     </main>
+
+    <footer class="footnote">
+      Conversations are logged so RelayPay support can follow up. Please don't say full card or bank account numbers.
+    </footer>
   </body>
 </html>

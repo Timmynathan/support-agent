@@ -1,143 +1,532 @@
-* {
+/* Every value comes from tokens.css. Motion rules: transform/opacity only, custom curves,
+   press feedback on everything pressable, hover gated to real pointers, reduced motion kept
+   gentle (opacity) rather than removed. */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
-  font-weight: var(--font-weight-regular);
-  line-height: 1.5;
-}
-
-.page {
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: var(--space-8) var(--gutter);
-}
-
-.logo {
-  margin: 0 0 var(--space-6);
-  color: var(--color-primary);
-  font-size: var(--font-size-title);
-  font-weight: var(--font-weight-medium);
-}
-
-.panel {
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius);
-  padding: var(--space-6);
-}
-
-.intro {
-  margin: 0 0 var(--space-6);
-  color: var(--color-text-muted);
-}
-
-/* The state is always written out in words; colour only reinforces it. */
-.status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-4);
-  font-weight: var(--font-weight-medium);
-}
-
-.status-dot {
-  width: var(--space-2);
-  height: var(--space-2);
-  border-radius: 50%;
-  background: var(--color-border);
-  flex: none;
-}
-
-.status[data-state='in-call'] .status-dot {
-  background: var(--color-accent);
-}
-
-.status[data-state='error'] .status-dot {
-  background: var(--color-danger);
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  line-height: var(--line-height-base);
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
   font: inherit;
-  font-weight: var(--font-weight-medium);
-  padding: var(--space-3) var(--space-6);
-  border-radius: var(--radius);
-  border: var(--border-width) solid var(--color-primary);
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  color: inherit;
 }
 
-button:focus-visible {
+:focus-visible {
   outline: var(--focus-width) solid var(--color-focus);
   outline-offset: var(--focus-width);
 }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+[hidden] {
+  display: none !important;
 }
 
-.button-primary {
+.visually-hidden {
+  position: absolute;
+  width: var(--border-width);
+  height: var(--border-width);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+
+.topbar {
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--gutter) 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.wordmark svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.tag {
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+
+.stage {
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-10) var(--gutter) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Page entrance: seen once per visit, so a short stagger is allowed. Never blocks input. */
+.enter {
+  opacity: 0;
+  transform: translateY(var(--enter-offset));
+  animation: enter var(--duration-enter) var(--ease-out) forwards;
+}
+.enter:nth-child(2) { animation-delay: var(--stagger); }
+.enter:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+.enter:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+.enter:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+
+@keyframes enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Hero ───────────────────────────────────────────────────────── */
+
+.hero {
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+.lede {
+  margin: 0 auto;
+  max-width: var(--lede-width);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-lg);
+}
+
+/* ── Cards ──────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Call console ───────────────────────────────────────────────── */
+
+.console {
+  padding: var(--space-10) var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.call {
+  position: relative;
+  width: var(--size-call);
+  height: var(--size-call);
+}
+
+/* Grows with whoever is speaking. Driven per frame from JS by setting transform on this
+   element directly (never through a variable on a parent). */
+.level-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+.console[data-state='listening'] .level-ring,
+.console[data-state='speaking'] .level-ring {
+  opacity: 1;
+}
+
+.console[data-state='speaking'] .level-ring {
+  background: var(--color-primary-soft);
+}
+
+.spinner {
+  position: absolute;
+  inset: calc(var(--size-ring-gap) * -1);
+  border-radius: 50%;
+  border: var(--spinner-width) solid transparent;
+  border-top-color: var(--color-accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.console[data-state='connecting'] .spinner {
+  opacity: 1;
+  animation: spin var(--duration-spin) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.call-button {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
   background: var(--color-primary);
   color: var(--color-on-primary);
+  box-shadow: var(--shadow-call);
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-base) ease,
+    box-shadow var(--duration-base) ease;
 }
 
-.button-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+.call-button:active:not(:disabled) {
+  transform: scale(var(--press-scale));
 }
 
-.button-secondary {
-  background: transparent;
-  color: var(--color-primary);
+.call-button:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
 }
 
-.caption {
-  margin: var(--space-6) 0 0;
-  padding-top: var(--space-4);
-  border-top: var(--border-width) solid var(--color-border);
+.call-button svg {
+  width: var(--size-icon);
+  height: var(--size-icon);
+  transition: transform var(--duration-base) var(--ease-in-out);
 }
 
-.caption-label {
-  margin: 0 0 var(--space-1);
-  font-size: var(--font-size-small);
+/* In a call the same button hangs up: it turns red and the handset tips over. */
+.console[data-in-call='true'] .call-button {
+  background: var(--color-danger);
+  box-shadow: var(--shadow-call-danger);
+}
+
+.console[data-in-call='true'] .call-button svg {
+  transform: rotate(135deg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .call-button:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .console[data-in-call='true'] .call-button:hover {
+    background: var(--color-danger-hover);
+  }
+}
+
+.call-label {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.status {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.status-dot {
+  width: var(--size-dot);
+  height: var(--size-dot);
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+  transition: background-color var(--duration-base) ease;
+}
+
+.console[data-state='listening'] .status-dot { background: var(--color-accent); }
+.console[data-state='speaking'] .status-dot { background: var(--color-primary); }
+.console[data-state='connecting'] .status-dot { background: var(--color-accent); }
+.console[data-state='error'] .status-dot,
+.console[data-state='unavailable'] .status-dot { background: var(--color-danger); }
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-subtle);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.pill svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.pill:active {
+  transform: scale(var(--press-scale));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pill:hover {
+    background: var(--color-surface-muted);
+  }
+}
+
+.pill[aria-pressed='true'] {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+/* Shown only in a call; fades up when it appears. */
+.mute {
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-press) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(var(--enter-offset));
+  }
+}
+
+.hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* ── Captions ───────────────────────────────────────────────────── */
+
+.captions {
+  padding: var(--space-5) var(--space-6);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.caption-who {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
 }
 
 .caption-text {
   margin: 0;
+  transition:
+    opacity var(--duration-fast) ease,
+    filter var(--duration-fast) ease;
 }
 
+/* Crossfade between utterances: a light blur makes the old and new line read as one change. */
+.caption-text.is-changing {
+  opacity: var(--opacity-changing);
+  filter: blur(var(--caption-blur));
+}
+
+.caption-text.is-partial {
+  color: var(--color-text-muted);
+}
+
+.caption-text.is-empty {
+  color: var(--color-text-subtle);
+}
+
+.caption-tag {
+  margin-left: var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+}
+
+/* ── Suggestions ────────────────────────────────────────────────── */
+
+.suggestions-title {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-align: center;
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.chip:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+.chip:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+}
+
+/* ── Error ──────────────────────────────────────────────────────── */
+
 .error {
-  margin: var(--space-4) 0 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border-radius: var(--radius);
-  background: var(--color-danger-bg);
+  background: var(--color-danger-soft);
   color: var(--color-danger);
+  transition: opacity var(--duration-fast) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.error p {
+  margin: 0;
 }
 
 .error details {
   margin-top: var(--space-2);
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-sm);
 }
 
-.note {
-  margin: var(--space-6) 0 0;
-  font-size: var(--font-size-small);
-  color: var(--color-text-muted);
+.error summary {
+  cursor: pointer;
 }
 
-[hidden] {
-  display: none !important;
+.error code {
+  display: block;
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.footnote {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--gutter) var(--space-8);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+/* ── Reduced motion: fewer and gentler, not none. Keep opacity, drop movement. ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .enter {
+    transform: none;
+    animation: fade var(--duration-enter) ease forwards;
+  }
+  @keyframes fade {
+    to {
+      opacity: 1;
+    }
+  }
+  .console[data-state='connecting'] .spinner {
+    animation: none;
+    border-color: var(--color-accent);
+    opacity: var(--opacity-changing);
+  }
+  .call-button,
+  .call-button svg,
+  .pill,
+  .chip,
+  .mute {
+    transition-property: background-color, border-color, opacity;
+  }
+  .call-button:active:not(:disabled),
+  .pill:active,
+  .chip:active:not(:disabled) {
+    transform: none;
+  }
+  .console[data-in-call='true'] .call-button svg {
+    transform: none;
+  }
+  .caption-text.is-changing {
+    filter: none;
+  }
 }
