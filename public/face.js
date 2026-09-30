@@ -33,9 +33,10 @@ const MASK = {
   centerY: -0.05,
   backZ: 0.1, // everything behind this plane (ears, back of head) is dropped
   chinCutY: -0.84,
-  blankIterations: 60, // how far the "blank" face is smoothed (plain Laplacian: it flattens)
+  // Iteration counts are for the subdivided mesh (half-length edges need ~4x the passes).
+  blankIterations: 200, // how far the "blank" face is smoothed (plain Laplacian: it flattens)
   featureStrength: 0.5, // how much of the scan's own features come back (1 = all)
-  smoothIterations: 8,
+  smoothIterations: 24,
   jawNarrowing: 0.07,
 };
 
@@ -58,7 +59,7 @@ const FEATURES = {
   ],
   eyeHalfWidth: 0.14,
   eyeHalfHeight: 0.06,
-  eyeFrontZ: 0.3,
+  eyeFrontZ: 0.1, // cut through the whole depth of the eye: no lids or eyeballs left inside
 };
 
 // The scan's lips are one closed surface, so the mouth opens by splitting at the seam: the
@@ -122,9 +123,9 @@ function buildEnvironment(renderer) {
     studio.add(mesh);
   };
   light(cssColor('--mascot-env-key'), 3, 1.6, [-3, 7, 4]);
-  light(cssColor('--mascot-env-accent'), 2.2, 1.8, [-8, -0.5, 3]);
-  light(cssColor('--mascot-env-primary'), 2.4, 2.2, [8, 1, 0]);
-  light(cssColor('--mascot-env-warm'), 2.2, 1.1, [5, 5, 6]);
+  light(cssColor('--mascot-env-accent'), 1.2, 1.8, [-8, -0.5, 3]);
+  light(cssColor('--mascot-env-primary'), 1.3, 2.2, [8, 1, 0]);
+  light(cssColor('--mascot-env-warm'), 1.4, 1.1, [5, 5, 6]);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const texture = pmrem.fromScene(studio, 0.04).texture;
   pmrem.dispose();
@@ -170,12 +171,31 @@ function smoothSurface(geometry, iterations, lambda, mu) {
     neighbours[c].add(a).add(b);
   }
   const lists = neighbours.map((set) => [...set]);
+  // Vertices on an open edge (an edge used by only one triangle) stay put: smoothing would
+  // otherwise pull the mesh's border inward, past the clean oval the alpha cut draws.
+  const edgeUse = new Map();
+  for (let t = 0; t < index.length; t += 3) {
+    for (const [a, b] of [
+      [index[t], index[t + 1]],
+      [index[t + 1], index[t + 2]],
+      [index[t + 2], index[t]],
+    ]) {
+      const key = a < b ? a * position.count + b : b * position.count + a;
+      edgeUse.set(key, (edgeUse.get(key) ?? 0) + 1);
+    }
+  }
+  const pinned = new Uint8Array(position.count);
+  for (const [key, uses] of edgeUse) {
+    if (uses !== 1) continue;
+    pinned[Math.floor(key / position.count)] = 1;
+    pinned[key % position.count] = 1;
+  }
   const next = new Float32Array(p.length);
   const pass = (factor) => {
     for (let i = 0; i < lists.length; i++) {
       const list = lists[i];
       for (let k = 0; k < 3; k++) {
-        if (!list.length) {
+        if (!list.length || pinned[i]) {
           next[i * 3 + k] = p[i * 3 + k];
           continue;
         }
@@ -210,12 +230,74 @@ export async function loadHeadGeometry() {
   geometry.deleteAttribute('uv');
   geometry.deleteAttribute('normal');
   geometry = mergeVertices(geometry, 1e-4);
-  // The feature measurements (lips, eyes, mask outline) were taken on the scan as-is, so the
-  // rig is built from these positions; neutralising moves the vertices but keeps their order.
+  geometry = keepMaskRegion(geometry);
+  geometry = subdivide(geometry);
+  // The feature measurements (lips, eyes) were taken on the scan as-is, so the rig is built
+  // from these positions; neutralising moves the vertices but keeps their order.
   geometry.userData.scanPositions = Float32Array.from(geometry.attributes.position.array);
   neutralise(geometry);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+// Keeps only the triangles around the mask (the face's front, with a margin beyond the oval
+// the alpha cut makes), so the back of the head isn't subdivided and smoothed for nothing.
+function keepMaskRegion(geometry) {
+  const position = geometry.attributes.position;
+  const index = geometry.index.array;
+  const inRegion = (i) =>
+    position.getZ(i) > MASK.backZ - 0.2 &&
+    position.getY(i) > MASK.chinCutY - 0.15 &&
+    Math.hypot(position.getX(i) / MASK.halfWidth, (position.getY(i) - MASK.centerY) / MASK.halfHeight) < 1.15;
+  const remap = new Map();
+  const positions = [];
+  const kept = [];
+  const vertex = (i) => {
+    if (!remap.has(i)) {
+      remap.set(i, positions.length / 3);
+      positions.push(position.getX(i), position.getY(i), position.getZ(i));
+    }
+    return remap.get(i);
+  };
+  for (let t = 0; t < index.length; t += 3) {
+    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
+    if (inRegion(a) && inRegion(b) && inRegion(c)) kept.push(vertex(a), vertex(b), vertex(c));
+  }
+  const result = new THREE.BufferGeometry();
+  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  result.setIndex(kept);
+  return result;
+}
+
+// Splits every triangle into four at its edge midpoints (shared edges share one new vertex),
+// giving the smoothing a finer surface to work on and the eye and mouth cut-outs finer edges.
+function subdivide(geometry) {
+  const position = geometry.attributes.position;
+  const index = geometry.index.array;
+  const positions = Array.from(position.array);
+  const midpoints = new Map();
+  const midpoint = (a, b) => {
+    const key = a < b ? a * position.count + b : b * position.count + a;
+    let m = midpoints.get(key);
+    if (m === undefined) {
+      m = positions.length / 3;
+      for (let k = 0; k < 3; k++) positions.push((positions[a * 3 + k] + positions[b * 3 + k]) / 2);
+      midpoints.set(key, m);
+    }
+    return m;
+  };
+  const triangles = [];
+  for (let t = 0; t < index.length; t += 3) {
+    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
+    const ab = midpoint(a, b);
+    const bc = midpoint(b, c);
+    const ca = midpoint(c, a);
+    triangles.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+  }
+  const result = new THREE.BufferGeometry();
+  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  result.setIndex(triangles);
+  return result;
 }
 
 // Turns a specific (male) scan into an idealised, genderless face. Features are toned down
@@ -243,6 +325,7 @@ function buildRig(scan, neutral, count) {
   const F = FEATURES;
   const jaw = new Float32Array(count); // follows the jaw down (0..1)
   const lip = new Float32Array(count); // follows the upper lip up (0..1)
+  const movers = []; // vertices the mouth moves, so each frame touches only these
   const eyeVertices = []; // [index, u, v]: position relative to an eye, in eye half-sizes
   const mouthVertices = []; // [index, u, v]: position relative to the mouth opening
   const outline = new Float32Array(count); // 1 inside the mask, 0 cut away
@@ -282,7 +365,8 @@ function buildRig(scan, neutral, count) {
       }
     }
   }
-  return { jaw, lip, eyeVertices, mouthVertices, outline };
+  for (let i = 0; i < count; i++) if (jaw[i] > 0.001 || lip[i] > 0.001) movers.push(i);
+  return { jaw, lip, movers, eyeVertices, mouthVertices, outline };
 }
 
 // 0 inside an almond opening (cut away), 1 outside. `open` scales its height: an eye blinks
@@ -326,7 +410,7 @@ export async function createFace(container, { reduceMotion }) {
     alphaTest: 0.5,
     color: cssColor('--mascot-tint'),
     metalness: 1,
-    roughness: 0.14,
+    roughness: 0.2,
     clearcoat: 1,
     clearcoatRoughness: 0.08,
     envMapIntensity: 1.35,
@@ -352,7 +436,7 @@ export async function createFace(container, { reduceMotion }) {
     appliedMouth = open;
     const drop = open * MOUTH.jawDrop;
     const lift = open * MOUTH.lipLift;
-    for (let i = 0; i < positions.count; i++) {
+    for (const i of rig.movers) {
       const jaw = rig.jaw[i];
       positions.setY(i, base[i * 3 + 1] - drop * jaw + lift * rig.lip[i]);
       positions.setZ(i, base[i * 3 + 2] - drop * jaw * MOUTH.jawBack);
