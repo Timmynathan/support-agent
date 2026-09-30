@@ -326,7 +326,6 @@ function buildRig(scan, neutral, count) {
   const jaw = new Float32Array(count); // follows the jaw down (0..1)
   const lip = new Float32Array(count); // follows the upper lip up (0..1)
   const movers = []; // vertices the mouth moves, so each frame touches only these
-  const eyeVertices = []; // [index, u, v]: position relative to an eye, in eye half-sizes
   const mouthVertices = []; // [index, u, v]: position relative to the mouth opening
   const outline = new Float32Array(count); // 1 inside the mask, 0 cut away
   for (let i = 0; i < count; i++) {
@@ -357,25 +356,60 @@ function buildRig(scan, neutral, count) {
     const mu = x / F.mouthHalfWidth;
     const mv = dy / MOUTH.holeHalfHeight;
     if (front > 0.5 && mu * mu + (mv / 3) ** 2 < 1.7) mouthVertices.push([i, mu, mv]);
-    if (z > F.eyeFrontZ) {
-      for (const eye of F.eyes) {
-        const u = (x - eye.x) / F.eyeHalfWidth;
-        const v = (y - eye.y) / F.eyeHalfHeight;
-        if (u * u + v * v < 4) eyeVertices.push([i, u, v]);
-      }
-    }
   }
   for (let i = 0; i < count; i++) if (jaw[i] > 0.001 || lip[i] > 0.001) movers.push(i);
-  return { jaw, lip, movers, eyeVertices, mouthVertices, outline };
+  return { jaw, lip, movers, mouthVertices, outline };
 }
 
-// 0 inside an almond opening (cut away), 1 outside. `open` scales its height: an eye blinks
-// by closing from top and bottom; the mouth opens by growing from the lip line.
+// 0 inside the mouth's almond opening (cut away), 1 outside. `open` scales its height, so
+// the opening grows from the lip line. (The eyes use the same shape, cut in the shader.)
 function openingAlpha(u, v, open) {
   if (open < 0.02) return 1;
   const almond = v * (1 + 0.8 * u * u);
   const r = u * u + (almond / open) ** 2;
   return smoothstep(0.75, 1, r);
+}
+
+// Adds the eye openings to the material's shader. The mesh's own (rest-pose) position is
+// passed to the fragment shader, and any fragment inside either almond eye outline is
+// discarded. Returns the uniform that opens and closes them (for blinking).
+function cutEyes(material) {
+  const F = FEATURES;
+  const eyeOpen = { value: 1 };
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uEyeOpen = eyeOpen;
+    shader.uniforms.uEyeLeft = { value: new THREE.Vector2(F.eyes[0].x, F.eyes[0].y) };
+    shader.uniforms.uEyeRight = { value: new THREE.Vector2(F.eyes[1].x, F.eyes[1].y) };
+    shader.uniforms.uEyeHalf = { value: new THREE.Vector2(F.eyeHalfWidth, F.eyeHalfHeight) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vMaskPosition;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMaskPosition = transformed;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        [
+          '#include <common>',
+          'varying vec3 vMaskPosition;',
+          'uniform float uEyeOpen;',
+          'uniform vec2 uEyeLeft;',
+          'uniform vec2 uEyeRight;',
+          'uniform vec2 uEyeHalf;',
+          'bool insideEye(vec2 centre) {',
+          '  vec2 d = (vMaskPosition.xy - centre) / uEyeHalf;',
+          '  float almond = d.y * (1.0 + 0.8 * d.x * d.x) / max(uEyeOpen, 0.001);',
+          '  return d.x * d.x + almond * almond < 0.87;',
+          '}',
+        ].join('\n'),
+      )
+      .replace(
+        'void main() {',
+        [
+          'void main() {',
+          `  if (uEyeOpen > 0.02 && vMaskPosition.z > ${F.eyeFrontZ.toFixed(3)} && (insideEye(uEyeLeft) || insideEye(uEyeRight))) discard;`,
+        ].join('\n'),
+      );
+  };
+  return eyeOpen;
 }
 
 export async function createFace(container, { reduceMotion }) {
@@ -401,7 +435,8 @@ export async function createFace(container, { reduceMotion }) {
   const positions = geometry.attributes.position;
   const base = Float32Array.from(positions.array);
   const rig = buildRig(geometry.userData.scanPositions, base, positions.count);
-  // Per-vertex alpha cuts the mask outline, the eyes and the mouth (alphaTest).
+  // Per-vertex alpha cuts the mask outline and the mouth (alphaTest); the eyes are cut per
+  // pixel in the shader (cutEyes), so nothing at all shows inside them.
   const colors = new THREE.BufferAttribute(new Float32Array(positions.count * 4).fill(1), 4);
   for (let i = 0; i < positions.count; i++) colors.setW(i, rig.outline[i]);
   geometry.setAttribute('color', colors);
@@ -415,6 +450,7 @@ export async function createFace(container, { reduceMotion }) {
     clearcoatRoughness: 0.08,
     envMapIntensity: 1.35,
   });
+  const eyeOpen = cutEyes(material);
   const head = new THREE.Mesh(geometry, material);
   scene.add(head);
 
@@ -423,7 +459,6 @@ export async function createFace(container, { reduceMotion }) {
   let level = 0;
   let levelTarget = 0;
   let appliedMouth = -1;
-  let appliedEyes = -1;
   let time = 0;
   let last = performance.now();
   let frame = 0;
@@ -447,12 +482,9 @@ export async function createFace(container, { reduceMotion }) {
     colors.needsUpdate = true;
   }
 
-  // Opens the eyes (1 open … 0 shut), only when it actually changed.
+  // Opens the eyes (1 open … 0 shut): one shader value, so a blink costs nothing.
   function setEyes(open) {
-    if (Math.abs(open - appliedEyes) < 0.01) return;
-    appliedEyes = open;
-    for (const [i, u, v] of rig.eyeVertices) colors.setW(i, rig.outline[i] * openingAlpha(u, v, open));
-    colors.needsUpdate = true;
+    eyeOpen.value = open;
   }
 
   // Blinks every few seconds, at a slightly irregular rhythm so it doesn't feel mechanical.
