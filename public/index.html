@@ -61,33 +61,6 @@
         <li>Account &amp; verification</li>
       </ul>
 
-      <!-- Call status. The call button itself lives in the chat bar at the bottom. -->
-      <section class="console" id="console" data-state="loading" data-in-call="false" aria-label="Call">
-        <p class="status" id="status" role="status" aria-live="polite">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="status-text">Preparing…</span>
-          <span class="timer" id="timer" hidden>0:00</span>
-        </p>
-
-        <button type="button" class="pill mute" id="mute-button" aria-pressed="false" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
-          </svg>
-          <span id="mute-label">Mute</span>
-        </button>
-
-        <!-- Ends the caller's turn now instead of waiting for Vapi to notice the silence. -->
-        <button type="button" class="pill done" id="done-button" hidden disabled>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12.5l4.5 4.5L19 7.5" />
-          </svg>
-          Done speaking
-        </button>
-
-        <p class="hint" id="mic-hint" hidden>I can't hear you yet. Check that your microphone is on, selected and not muted.</p>
-      </section>
-
       <section class="error" id="error" role="alert" hidden>
         <p id="error-text"></p>
         <details id="error-details-wrap" hidden>
@@ -115,6 +88,32 @@
           <button type="button" class="thread-toggle" id="thread-toggle" aria-expanded="true" aria-controls="chat-log">Hide</button>
         </div>
         <ol class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="Conversation messages"></ol>
+      </section>
+      <!-- Call status and in-call controls, pinned with the chat bar so they are always on screen. -->
+      <section class="console" id="console" data-state="loading" data-in-call="false" aria-label="Call">
+        <p class="status" id="status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-text">Preparing…</span>
+          <span class="timer" id="timer" hidden>0:00</span>
+        </p>
+
+        <button type="button" class="pill mute" id="mute-button" aria-pressed="false" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+          </svg>
+          <span id="mute-label">Mute</span>
+        </button>
+
+        <!-- Ends the caller's turn now instead of waiting for Vapi to notice the silence. -->
+        <button type="button" class="pill done" id="done-button" hidden disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+          Done speaking
+        </button>
+
+        <p class="hint" id="mic-hint" hidden>I can't hear you yet. Check that your microphone is on, selected and not muted.</p>
       </section>
       <form class="chat-bar" id="chat-form">
         <label class="visually-hidden" for="chat-input">Type a question for Relay</label>
