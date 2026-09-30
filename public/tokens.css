@@ -4,16 +4,15 @@
    Motion (Emil Kowalski's design engineering): strong custom curves, UI motion under 300ms. */
 :root {
   /* Colour */
-  --color-bg: #f5f6f8;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-muted: #eef1f5;
+  --color-surface-muted: #f4f6f9;
   --color-border: #e2e6ec;
   --color-text: #111827;
   --color-text-muted: #5b6474;
   --color-text-subtle: #8a93a3;
   --color-primary: #16376b;
   --color-primary-hover: #0f2b57;
-  --color-primary-soft: #e3eaf5;
   --color-accent: #0f7a84;
   --color-accent-soft: #dcf0f1;
   --color-danger: #b42318;
@@ -24,9 +23,22 @@
   --color-on-primary: #ffffff;
   --color-focus: #0f7a84;
 
-  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 12px 32px rgb(16 24 40 / 0.06);
   --shadow-call: 0 10px 28px rgb(22 55 107 / 0.28);
   --shadow-call-danger: 0 10px 28px rgb(180 35 24 / 0.26);
+
+  /* Relay, the voice orb (public/orb.js reads these). The orb is chrome, so it shows only
+     what it reflects: a sky-to-floor dome (sky, bright horizon, blue-grey floor) plus soft
+     blue, teal, white and warm lights. No gradient is used on the page itself. */
+  --orb-env-sky: #8ea4c8;
+  --orb-env-floor: #4a5b7a;
+  --orb-env-horizon: #f7f9fc;
+  --orb-env-key: #f4f6fa;
+  --orb-env-primary: #3d6fc4;
+  --orb-env-accent: #5cc3cb;
+  --orb-env-warm: #f2c29a;
+  --orb-tint: #cdd6e4;
+  --orb-shadow: rgb(22 55 107 / 0.18);
+  --orb-fallback: #1f3558;
 
   /* Type */
   --font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -35,7 +47,6 @@
   --font-size-base: 1rem;
   --font-size-lg: 1.0625rem;
   --font-size-title: clamp(1.625rem, 1.3rem + 1.4vw, 2.125rem);
-  --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --line-height-tight: 1.2;
@@ -51,15 +62,18 @@
   --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-  --space-10: 2.5rem;
-  --space-12: 3rem;
   --gutter: 1rem;
 
   /* Size */
   --content-width: 34rem;
   --lede-width: 28rem;
-  --size-call: 5.5rem;
-  --size-ring-gap: 0.625rem;
+  --size-call: 4.5rem;
+  --size-orb: min(17rem, 68vw);
+  --size-orb-shadow-height: 1.25rem;
+  --orb-shadow-width: calc(var(--size-orb) * 0.42);
+  --orb-placeholder-inset: 18%;
+  --orb-placeholder-opacity: 0.12;
+  --orb-shadow-blur: 14px;
   --size-icon: 1.625rem;
   --size-icon-sm: 1.125rem;
   --size-dot: 0.5rem;
@@ -68,7 +82,6 @@
   --radius-card: 1.25rem;
   --radius-pill: 999px;
   --border-width: 1px;
-  --spinner-width: 2px;
   --focus-width: 3px;
 
   /* Motion */
@@ -78,7 +91,7 @@
   --duration-fast: 200ms;
   --duration-base: 250ms;
   --duration-enter: 300ms;
-  --duration-spin: 800ms;
+  --duration-orb-reveal: 600ms;
   --stagger: 60ms;
   --press-scale: 0.97;
   --enter-offset: 0.5rem;
@@ -98,7 +111,6 @@
     --color-text-subtle: #7b8698;
     --color-primary: #8fb0e6;
     --color-primary-hover: #a9c3ee;
-    --color-primary-soft: #1d2b43;
     --color-accent: #5cc3cb;
     --color-accent-soft: #15333a;
     --color-danger: #f28b82;
@@ -108,8 +120,8 @@
     --color-warning-soft: #33290f;
     --color-on-primary: #0b1220;
     --color-focus: #5cc3cb;
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.35);
     --shadow-call: 0 10px 28px rgb(0 0 0 / 0.45);
     --shadow-call-danger: 0 10px 28px rgb(0 0 0 / 0.45);
+    --orb-shadow: rgb(0 0 0 / 0.55);
   }
 }

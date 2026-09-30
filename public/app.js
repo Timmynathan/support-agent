@@ -13,7 +13,7 @@ const el = {
   muteButton: document.getElementById('mute-button'),
   muteLabel: document.getElementById('mute-label'),
   micHint: document.getElementById('mic-hint'),
-  levelRing: document.getElementById('level-ring'),
+  orb: document.getElementById('orb'),
   error: document.getElementById('error'),
   errorText: document.getElementById('error-text'),
   errorDetailsWrap: document.getElementById('error-details-wrap'),
@@ -24,16 +24,19 @@ const el = {
 };
 
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
+// `orb` is what Relay's orb does in that state (public/orb.js).
 const STATES = {
-  loading: { status: 'Preparing…', label: 'Start call', action: 'Start call', enabled: false, inCall: false },
-  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false },
-  ready: { status: 'Ready when you are', label: 'Start call', action: 'Start call', enabled: true, inCall: false },
-  connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true },
-  listening: { status: 'Listening', label: 'End call', action: 'End call', enabled: true, inCall: true },
-  speaking: { status: 'RelayPay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true },
-  ended: { status: 'Call ended', label: 'Call again', action: 'Start a new call', enabled: true, inCall: false },
-  error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false },
+  loading: { status: 'Preparing…', label: 'Start call', action: 'Start call', enabled: false, inCall: false, orb: 'idle' },
+  unavailable: { status: 'Voice support is unavailable', label: 'Unavailable', action: 'Start call', enabled: false, inCall: false, orb: 'idle' },
+  ready: { status: 'Ready when you are', label: 'Start call', action: 'Start call', enabled: true, inCall: false, orb: 'idle' },
+  connecting: { status: 'Connecting…', label: 'Connecting', action: 'Cancel call', enabled: true, inCall: true, orb: 'connecting' },
+  listening: { status: 'Relay is listening', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'listening' },
+  thinking: { status: 'Relay is thinking…', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'thinking' },
+  speaking: { status: 'Relay is speaking', label: 'End call', action: 'End call', enabled: true, inCall: true, orb: 'speaking' },
+  ended: { status: 'Call ended', label: 'Call again', action: 'Start a new call', enabled: true, inCall: false, orb: 'idle' },
+  error: { status: 'The call could not continue', label: 'Try again', action: 'Try again', enabled: true, inCall: false, orb: 'idle' },
 };
+const LIVE_STATES = new Set(['listening', 'thinking', 'speaking']);
 
 // Why Vapi ended the call, in words a caller can act on. Anything not listed shows the raw reason.
 const ENDED_REASONS = {
@@ -45,8 +48,6 @@ const ENDED_REASONS = {
 const MIC_HINT_AFTER_MS = 6000;
 const MIC_HEARD_LEVEL = 0.02;
 const GREETING_FALLBACK_MS = 8000;
-const LEVEL_SMOOTHING = 0.35;
-const LEVEL_RING_GROWTH = 0.45;
 const CAPTION_SWAP_MS = 120;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -61,7 +62,8 @@ let micHeard = false;
 let pendingQuestion = null;
 let greetingDone = false;
 let greetingFallback = null;
-const level = { mic: 0, agent: 0, shown: 0, frame: 0 };
+let orb = null;
+const level = { mic: 0, agent: 0 };
 
 // ── State ──────────────────────────────────────────────────────────
 
@@ -74,10 +76,17 @@ function setState(name) {
   el.callLabel.textContent = s.label;
   el.callButton.setAttribute('aria-label', s.action);
   el.callButton.disabled = !s.enabled;
-  el.muteButton.hidden = !(name === 'listening' || name === 'speaking');
-  el.timer.hidden = !(name === 'listening' || name === 'speaking');
+  el.muteButton.hidden = !LIVE_STATES.has(name);
+  el.timer.hidden = !LIVE_STATES.has(name);
   for (const chip of el.chips) chip.disabled = !(s.enabled || s.inCall) || name === 'connecting';
+  orb?.setState(s.orb);
+  feedOrbLevel();
   if (!s.inCall) stopCallEffects();
+}
+
+// The orb follows whoever is audible: the agent while it speaks, otherwise the caller's mic.
+function feedOrbLevel() {
+  orb?.setLevel(state === 'speaking' ? level.agent : state === 'listening' ? level.mic : 0);
 }
 
 function showError(message, details) {
@@ -139,6 +148,8 @@ function onTranscript(message) {
     const final = message.transcriptType === 'final';
     setCaption(el.captionCaller, message.transcript, { partial: !final, newUtterance: !callerUtteranceOpen });
     callerUtteranceOpen = !final;
+    // The caller has finished a sentence: Relay is working on the answer until it speaks.
+    if (final && state === 'listening') setState('thinking');
     return;
   }
   if (message.role === 'assistant' && message.transcriptType === 'final') {
@@ -146,14 +157,23 @@ function onTranscript(message) {
   }
 }
 
-// ── Level ring and timer ───────────────────────────────────────────
+// ── Orb and timer ──────────────────────────────────────────────────
 
-// Smooths the audio level and sets the ring's transform directly each frame.
-function animateLevel() {
-  const target = state === 'speaking' ? level.agent : level.mic;
-  level.shown += (target - level.shown) * LEVEL_SMOOTHING;
-  if (!reduceMotion.matches) el.levelRing.style.transform = `scale(${1 + level.shown * LEVEL_RING_GROWTH})`;
-  level.frame = requestAnimationFrame(animateLevel);
+// Loaded separately so the call works even if 3D can't: on any failure the orb stays a still,
+// solid shape (the same one shown while loading).
+async function loadOrb() {
+  try {
+    const { createOrb } = await import('/orb.js');
+    orb = createOrb(el.orb, { reduceMotion });
+  } catch {
+    orb = null;
+  }
+  if (!orb) {
+    el.orb.dataset.fallback = 'true';
+    return;
+  }
+  orb.setState(STATES[state].orb);
+  el.orb.dataset.ready = 'true';
 }
 
 function formatElapsed(ms) {
@@ -170,17 +190,14 @@ function startCallEffects() {
   micHintTimer = setTimeout(() => {
     if (!micHeard) el.micHint.hidden = false;
   }, MIC_HINT_AFTER_MS);
-  cancelAnimationFrame(level.frame);
-  level.frame = requestAnimationFrame(animateLevel);
 }
 
 function stopCallEffects() {
   clearInterval(timerInterval);
   clearTimeout(micHintTimer);
   clearTimeout(greetingFallback);
-  cancelAnimationFrame(level.frame);
-  level.mic = level.agent = level.shown = 0;
-  el.levelRing.style.transform = '';
+  level.mic = level.agent = 0;
+  orb?.setLevel(0);
   el.micHint.hidden = true;
   el.muteButton.setAttribute('aria-pressed', 'false');
   el.muteLabel.textContent = 'Mute';
@@ -194,6 +211,7 @@ function askTyped(question) {
   setCaption(el.captionCaller, question, { tag: 'typed' });
   callerUtteranceOpen = false;
   vapi.send({ type: 'add-message', message: { role: 'user', content: question }, triggerResponseEnabled: true });
+  if (state === 'listening') setState('thinking');
 }
 
 function flushPendingQuestion() {
@@ -204,7 +222,7 @@ function flushPendingQuestion() {
 }
 
 async function onChip(question) {
-  if (state === 'listening' || state === 'speaking') {
+  if (LIVE_STATES.has(state)) {
     askTyped(question);
     return;
   }
@@ -234,7 +252,7 @@ function attachEvents() {
     showError(ENDED_REASONS[endedReason] ?? 'The call ended unexpectedly. Please try again.', `Vapi ended reason: ${endedReason}`);
   });
   vapi.on('speech-start', () => {
-    if (state === 'listening') setState('speaking');
+    if (state === 'listening' || state === 'thinking') setState('speaking');
   });
   vapi.on('speech-end', () => {
     if (state === 'speaking') setState('listening');
@@ -244,9 +262,13 @@ function attachEvents() {
       flushPendingQuestion();
     }
   });
-  vapi.on('volume-level', (value) => (level.agent = value));
+  vapi.on('volume-level', (value) => {
+    level.agent = value;
+    feedOrbLevel();
+  });
   vapi.on('local-volume-level', (value) => {
     level.mic = value;
+    feedOrbLevel();
     if (value > MIC_HEARD_LEVEL && !micHeard) {
       micHeard = true;
       el.micHint.hidden = true;
@@ -314,6 +336,7 @@ async function init() {
   }
 }
 
+void loadOrb();
 el.callButton.addEventListener('click', () => void onCallButton());
 el.muteButton.addEventListener('click', onMute);
 for (const chip of el.chips) chip.addEventListener('click', () => void onChip(chip.dataset.question));

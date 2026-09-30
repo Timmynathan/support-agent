@@ -35,15 +35,6 @@ button {
   display: none !important;
 }
 
-.visually-hidden {
-  position: absolute;
-  width: var(--border-width);
-  height: var(--border-width);
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* ── Header ─────────────────────────────────────────────────────── */
 
 .topbar {
@@ -85,7 +76,7 @@ button {
   width: 100%;
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: var(--space-10) var(--gutter) var(--space-8);
+  padding: var(--space-8) var(--gutter) var(--space-8);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -101,6 +92,7 @@ button {
 .enter:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
 .enter:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
 .enter:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+.enter:nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
 
 @keyframes enter {
   to {
@@ -139,78 +131,73 @@ button {
   font-size: var(--font-size-lg);
 }
 
-/* ── Cards ──────────────────────────────────────────────────────── */
+/* ── Relay, the orb ─────────────────────────────────────────────── */
 
-.card {
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+.orb-stage {
+  display: grid;
+  justify-items: center;
 }
 
-/* ── Call console ───────────────────────────────────────────────── */
+.orb {
+  position: relative;
+  width: var(--size-orb);
+  aspect-ratio: 1;
+}
+
+.orb canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity var(--duration-orb-reveal) var(--ease-out);
+}
+
+.orb[data-ready='true'] canvas {
+  opacity: 1;
+}
+
+/* Loading and fallback share one quiet shape: a still, solid orb in the brand colour.
+   Loading fades it out when the 3D orb is ready; the fallback simply keeps it. */
+.orb::before {
+  content: '';
+  position: absolute;
+  inset: var(--orb-placeholder-inset);
+  border-radius: 50%;
+  background: var(--orb-fallback);
+  opacity: var(--orb-placeholder-opacity);
+  transition: opacity var(--duration-orb-reveal) var(--ease-out);
+}
+
+.orb[data-ready='true']::before {
+  opacity: 0;
+}
+
+.orb[data-fallback='true']::before {
+  opacity: 1;
+}
+
+.orb-shadow {
+  width: var(--orb-shadow-width);
+  height: var(--size-orb-shadow-height);
+  margin-top: calc(var(--space-6) * -1);
+  border-radius: 50%;
+  background: var(--orb-shadow);
+  filter: blur(var(--orb-shadow-blur));
+}
+
+/* ── Call controls ──────────────────────────────────────────────── */
 
 .console {
-  padding: var(--space-10) var(--space-6) var(--space-8);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-5);
-}
-
-.call {
-  position: relative;
-  width: var(--size-call);
-  height: var(--size-call);
-}
-
-/* Grows with whoever is speaking. Driven per frame from JS by setting transform on this
-   element directly (never through a variable on a parent). */
-.level-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--color-accent-soft);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-base) var(--ease-out);
-}
-
-.console[data-state='listening'] .level-ring,
-.console[data-state='speaking'] .level-ring {
-  opacity: 1;
-}
-
-.console[data-state='speaking'] .level-ring {
-  background: var(--color-primary-soft);
-}
-
-.spinner {
-  position: absolute;
-  inset: calc(var(--size-ring-gap) * -1);
-  border-radius: 50%;
-  border: var(--spinner-width) solid transparent;
-  border-top-color: var(--color-accent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-
-.console[data-state='connecting'] .spinner {
-  opacity: 1;
-  animation: spin var(--duration-spin) linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(1turn);
-  }
+  gap: var(--space-3);
 }
 
 .call-button {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  width: var(--size-call);
+  height: var(--size-call);
   display: grid;
   place-items: center;
   border: 0;
@@ -282,9 +269,10 @@ button {
   transition: background-color var(--duration-base) ease;
 }
 
-.console[data-state='listening'] .status-dot { background: var(--color-accent); }
-.console[data-state='speaking'] .status-dot { background: var(--color-primary); }
+.console[data-state='listening'] .status-dot,
 .console[data-state='connecting'] .status-dot { background: var(--color-accent); }
+.console[data-state='thinking'] .status-dot,
+.console[data-state='speaking'] .status-dot { background: var(--color-primary); }
 .console[data-state='error'] .status-dot,
 .console[data-state='unavailable'] .status-dot { background: var(--color-danger); }
 
@@ -362,6 +350,9 @@ button {
   padding: var(--space-5) var(--space-6);
   display: grid;
   gap: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-muted);
 }
 
 .caption-who {
@@ -425,7 +416,7 @@ button {
   padding: var(--space-2) var(--space-4);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
   font-size: var(--font-size-sm);
   text-align: left;
   cursor: pointer;
@@ -505,11 +496,6 @@ button {
     to {
       opacity: 1;
     }
-  }
-  .console[data-state='connecting'] .spinner {
-    animation: none;
-    border-color: var(--color-accent);
-    opacity: var(--opacity-changing);
   }
   .call-button,
   .call-button svg,
