@@ -1,0 +1,34 @@
+# Render Blueprint for the RelayPay support agent.
+# Secrets are declared with `sync: false`: Render asks for their values when the Blueprint is
+# created and stores them encrypted. They are never written in this file.
+services:
+  - type: web
+    name: relaypay-support-agent
+    runtime: docker
+    # Starter, not free: the free plan sleeps when idle and takes ~50 s to wake, which would
+    # drop a caller. Each live call runs a Claude process (~450 MB with the MCP server).
+    plan: starter
+    # Match the Supabase project's region: every turn makes several database round trips.
+    region: REPLACE_WITH_REGION
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: VOICE_HOST
+        value: 0.0.0.0
+      - key: AGENT_MODEL
+        value: claude-sonnet-5
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VAPI_LLM_SECRET
+        sync: false
+      - key: VAPI_WEBHOOK_SECRET
+        sync: false
+      # Public by Vapi's design; served to the browser widget.
+      - key: VAPI_PUBLIC_KEY
+        sync: false
+      - key: VAPI_ASSISTANT_ID
+        sync: false

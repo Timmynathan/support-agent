@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fromRoot } from '../shared/paths.js';
 
 export interface KnowledgeChunk {
   id: string;
@@ -9,7 +9,7 @@ export interface KnowledgeChunk {
   summary: string;
 }
 
-const KNOWLEDGE_BASE_PATH = resolve(import.meta.dirname, '../../assets/relaypay-knowledge-base.md');
+const KNOWLEDGE_BASE_PATH = fromRoot('assets', 'relaypay-knowledge-base.md');
 
 // One chunk per "###" heading, plus any prose that sits directly under a "##" heading.
 // The KB is written as short, self-contained Q&A and policy blocks, so a heading is the natural

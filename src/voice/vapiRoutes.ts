@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import type { SpeechSink } from '../agent/conversation.js';
+import { fromRoot } from '../shared/paths.js';
 import { endConversation, getOrStartConversation } from '../server/registry.js';
 import { HttpError, parseJsonObject, readBody, sendJson } from '../server/httpUtil.js';
 import { verifyBearer, verifyWebhookSignature } from './auth.js';
@@ -14,7 +15,7 @@ import { normalizeSpokenReferences } from './transcript.js';
 //   POST /vapi/webhook           (call status + end-of-call report)
 
 const MODEL_NAME = 'relaypay-agent';
-const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
+const PUBLIC_DIR = fromRoot('public');
 // Only these files are served; no path from the request ever reaches the filesystem.
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },

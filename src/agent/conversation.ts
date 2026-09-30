@@ -1,6 +1,7 @@
 import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import type { Channel } from '../shared/domain.js';
+import { fromRoot } from '../shared/paths.js';
 import { loadKnowledgeBase } from '../knowledge/knowledgeBase.js';
 import { buildRetriever, type RetrievalHit } from '../knowledge/retrieve.js';
 import * as log from './conversationLog.js';
@@ -41,7 +42,7 @@ function isSafeSocialReply(text: string): boolean {
 
 const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const LONG_RESPONSE_WORDS = 80;
-const AGENT_FALLBACK_LOG = resolve(import.meta.dirname, '../../logs/agent-fallback.jsonl');
+const AGENT_FALLBACK_LOG = fromRoot('logs', 'agent-fallback.jsonl');
 
 const retriever = buildRetriever(loadKnowledgeBase());
 

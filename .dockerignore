@@ -1,0 +1,9 @@
+# Never send secrets or local state into the image build.
+.env
+.env.*
+!.env.example
+logs
+node_modules
+dist
+.git
+CLAUDE.md

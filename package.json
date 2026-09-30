@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
+    "start": "node dist/src/server/main.js",
     "seed": "tsx --env-file=.env scripts/seed.ts",
     "mcp": "tsx --env-file=.env src/mcp/server.ts",
     "tool": "tsx --env-file=.env scripts/tool.ts",

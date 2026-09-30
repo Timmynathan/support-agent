@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { query, type Query, type SDKMessage, type SDKPartialAssistantMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Channel } from '../shared/domain.js';
+import { RUNNING_COMPILED } from '../shared/paths.js';
 import { SYSTEM_PROMPT, TURN_OUTPUT_SCHEMA } from './prompt.js';
 
 export const AGENT_MODEL = process.env.AGENT_MODEL ?? 'claude-sonnet-5';
@@ -20,7 +21,10 @@ const RELAYPAY_TOOLS = [
 // chaining lookups, which is exactly what a caller waiting on the line can't afford.
 const MAX_TURNS = 6;
 const MCP_TOOL_TIMEOUT_MS = 8000;
-const MCP_SERVER_ENTRY = resolve(import.meta.dirname, '../mcp/server.ts');
+// Compiled (production): plain node on the built server. Development: the TypeScript source via tsx.
+const MCP_SERVER_ARGS = RUNNING_COMPILED
+  ? [resolve(import.meta.dirname, '../mcp/server.js')]
+  : ['--import', 'tsx', resolve(import.meta.dirname, '../mcp/server.ts')];
 
 export interface ToolEvent {
   name: string;
@@ -79,7 +83,7 @@ export class AgentSession {
           [MCP_SERVER_NAME]: {
             type: 'stdio',
             command: process.execPath,
-            args: ['--import', 'tsx', MCP_SERVER_ENTRY],
+            args: MCP_SERVER_ARGS,
             env: mcpServerEnv(conversationId, channel),
             timeout: MCP_TOOL_TIMEOUT_MS,
           },

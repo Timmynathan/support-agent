@@ -1,14 +1,13 @@
 import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { db, must, mustRow } from '../shared/db.js';
+import { fromRoot } from '../shared/paths.js';
 import type { ToolContext } from './context.js';
 import { redactForLog } from './redact.js';
 import { failure, type ToolOutcome } from './tool.js';
 import { ensureConversation } from './verification.js';
 
-const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-export const FALLBACK_LOG_PATH = resolve(PROJECT_ROOT, 'logs/tool-calls-fallback.jsonl');
+export const FALLBACK_LOG_PATH = fromRoot('logs', 'tool-calls-fallback.jsonl');
 
 interface ToolIdentity {
   name: string;
