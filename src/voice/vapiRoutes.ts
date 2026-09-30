@@ -22,6 +22,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/tokens.css': { file: 'tokens.css', type: 'text/css; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
+  '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },
 };
 
 function requireSecret(name: 'VAPI_LLM_SECRET' | 'VAPI_WEBHOOK_SECRET'): string {
