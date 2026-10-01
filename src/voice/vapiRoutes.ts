@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import type { SpeechSink } from '../agent/conversation.js';
 import { fromRoot } from '../shared/paths.js';
 import { endConversation, getOrStartConversation } from '../server/registry.js';
@@ -21,7 +22,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/face.js': { file: 'face.js', type: 'text/javascript; charset=utf-8' },
-  '/models/lee-perry-smith.glb': { file: 'models/lee-perry-smith.glb', type: 'model/gltf-binary' },
+  '/face-shape.js': { file: 'face-shape.js', type: 'text/javascript; charset=utf-8' },
+  '/models/relay-mask.bin': { file: 'models/relay-mask.bin', type: 'application/octet-stream' },
   '/tokens.css': { file: 'tokens.css', type: 'text/css; charset=utf-8' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
   '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },
@@ -159,10 +161,49 @@ async function webhook(req: IncomingMessage, res: ServerResponse): Promise<void>
   }
 }
 
-async function staticFile(res: ServerResponse, entry: { file: string; type: string }): Promise<void> {
-  const content = await readFile(resolve(PUBLIC_DIR, entry.file));
-  res.writeHead(200, { 'content-type': entry.type, 'cache-control': 'no-cache' });
-  res.end(content);
+interface PreparedFile {
+  mtimeMs: number;
+  etag: string;
+  plain: Buffer;
+  br: Buffer;
+  gzip: Buffer;
+}
+
+// Each file is compressed once and fingerprinted, then reused until it changes on disk (so an
+// edited file is picked up without a restart). "no-cache" means a browser always asks, but a
+// browser that already has the file gets a 304 with no body instead of downloading it again.
+const prepared = new Map<string, PreparedFile>();
+
+async function prepare(path: string): Promise<PreparedFile> {
+  const { mtimeMs } = await stat(path);
+  const cached = prepared.get(path);
+  if (cached && cached.mtimeMs === mtimeMs) return cached;
+  const plain = await readFile(path);
+  const file: PreparedFile = {
+    mtimeMs,
+    etag: `"${createHash('sha256').update(plain).digest('base64url').slice(0, 22)}"`,
+    plain,
+    br: brotliCompressSync(plain),
+    gzip: gzipSync(plain, { level: 9 }),
+  };
+  prepared.set(path, file);
+  return file;
+}
+
+async function staticFile(req: IncomingMessage, res: ServerResponse, entry: { file: string; type: string }): Promise<void> {
+  const file = await prepare(resolve(PUBLIC_DIR, entry.file));
+  const headers: Record<string, string> = { 'content-type': entry.type, 'cache-control': 'no-cache', etag: file.etag, vary: 'Accept-Encoding' };
+  if (req.headers['if-none-match'] === file.etag) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+  const accepts = String(req.headers['accept-encoding'] ?? '');
+  const [encoding, body] = /\bbr\b/.test(accepts) ? ['br', file.br] : /\bgzip\b/.test(accepts) ? ['gzip', file.gzip] : [null, file.plain];
+  if (encoding) headers['content-encoding'] = encoding;
+  headers['content-length'] = String(body.length);
+  res.writeHead(200, headers);
+  res.end(body);
 }
 
 // The widget needs exactly two values, both public by Vapi's design: the public key and the
@@ -181,6 +222,6 @@ export function routeVoice(req: IncomingMessage, res: ServerResponse): Promise<v
   if (req.method === 'GET' && path === '/config.json') return Promise.resolve().then(() => widgetConfig(res));
   if (req.method === 'GET' && path === '/health') return Promise.resolve().then(() => sendJson(res, 200, { ok: true }));
   const entry = req.method === 'GET' ? STATIC_FILES[path] : undefined;
-  if (entry) return staticFile(res, entry);
+  if (entry) return staticFile(req, res, entry);
   return null;
 }

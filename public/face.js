@@ -5,12 +5,12 @@
 // placeholder and the call works the same.
 //
 // Built from "Infinite, 3D Head Scan" by Lee Perry-Smith, CC BY 3.0
-// (public/models/LICENSE-*): cropped to a mask, with its features softened (see neutralise).
+// (public/models/LICENSE-*): cropped to a mask, with its features softened. That reshaping is
+// done once at build time (scripts/bake-face.mjs); the page only loads the result.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { decodeMask, MASK } from '/face-shape.js';
 
-const MODEL_URL = '/models/lee-perry-smith.glb';
+const MASK_URL = '/models/relay-mask.bin';
 
 // Head motion per state. The face eases toward each state's targets every frame, so every
 // change is continuous and can be interrupted mid-way. `lipPress` closes the scan's slightly
@@ -23,25 +23,7 @@ const STATE_PARAMS = {
   speaking: { sway: 0.07, swaySpeed: 0.6, nod: 0.05, tilt: 0.02, turn: 0, jawGain: 1, lipPress: 0 },
 };
 
-const HEAD_HEIGHT = 2.3;
-
-// Relay is a mask, not a portrait: only the front of the face inside an oval is kept (no ears,
-// back of head or neck), and the features are softened so the face reads as no one in
-// particular. The oval is cut with per-vertex alpha, so its edge follows a smooth curve.
-const MASK = {
-  halfWidth: 0.6,
-  halfHeight: 1.0,
-  centerY: -0.05,
-  backZ: 0.1, // everything behind this plane (ears, back of head) is dropped
-  chinCutY: -0.84,
-  // Iteration counts are for the subdivided mesh (half-length edges need ~4x the passes).
-  blankIterations: 200, // how far the "blank" face is smoothed (plain Laplacian: it flattens)
-  featureStrength: 0.5, // how much of the scan's own features come back (1 = all)
-  smoothIterations: 24,
-  jawNarrowing: 0.07,
-};
-
-// Facial features on the normalised head (origin at its centre, height HEAD_HEIGHT). The eyes
+// Facial features on the normalised head (origin at its centre, height HEAD_HEIGHT in face-shape.js). The eyes
 // were measured from a front render with a coordinate grid; the lips from the vertices
 // themselves: the lips meet in a crease at y = -0.311 on the centre line, dipping toward the
 // corners, with a shallow pocket behind the upper lip.
@@ -134,190 +116,18 @@ function buildEnvironment(renderer) {
   return texture;
 }
 
-// The scan is a bust; only the head is kept. Triangles below this line (as a fraction of the
-// scan's height from the top of the head) are dropped, leaving a clean head like a mask.
-const NECK_CUT = 0.7;
-
-function cropToHead(geometry) {
-  geometry.computeBoundingBox();
-  const { min, max } = geometry.boundingBox;
-  const cutY = max.y - NECK_CUT * (max.y - min.y);
-  const position = geometry.attributes.position;
-  const index = geometry.index.array;
-  const kept = [];
-  for (let i = 0; i < index.length; i += 3) {
-    const a = index[i];
-    const b = index[i + 1];
-    const c = index[i + 2];
-    if (Math.min(position.getY(a), position.getY(b), position.getY(c)) > cutY) kept.push(a, b, c);
-  }
-  geometry.setIndex(kept);
-  // Bounds of what remains, not of the whole bust.
-  const box = new THREE.Box3();
-  const point = new THREE.Vector3();
-  for (const i of kept) box.expandByPoint(point.fromBufferAttribute(position, i));
-  return box;
-}
-
-// Taubin smoothing (a shrink step then an inflate step per iteration), so the surface
-// softens without collapsing. Run on the merged mesh so texture seams don't split open.
-function smoothSurface(geometry, iterations, lambda, mu) {
-  const position = geometry.attributes.position;
-  const p = position.array;
-  const index = geometry.index.array;
-  const neighbours = Array.from({ length: position.count }, () => new Set());
-  for (let t = 0; t < index.length; t += 3) {
-    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
-    neighbours[a].add(b).add(c);
-    neighbours[b].add(a).add(c);
-    neighbours[c].add(a).add(b);
-  }
-  const lists = neighbours.map((set) => [...set]);
-  // Vertices on an open edge (an edge used by only one triangle) stay put: smoothing would
-  // otherwise pull the mesh's border inward, past the clean oval the alpha cut draws.
-  const edgeUse = new Map();
-  for (let t = 0; t < index.length; t += 3) {
-    for (const [a, b] of [
-      [index[t], index[t + 1]],
-      [index[t + 1], index[t + 2]],
-      [index[t + 2], index[t]],
-    ]) {
-      const key = a < b ? a * position.count + b : b * position.count + a;
-      edgeUse.set(key, (edgeUse.get(key) ?? 0) + 1);
-    }
-  }
-  const pinned = new Uint8Array(position.count);
-  for (const [key, uses] of edgeUse) {
-    if (uses !== 1) continue;
-    pinned[Math.floor(key / position.count)] = 1;
-    pinned[key % position.count] = 1;
-  }
-  const next = new Float32Array(p.length);
-  const pass = (factor) => {
-    for (let i = 0; i < lists.length; i++) {
-      const list = lists[i];
-      for (let k = 0; k < 3; k++) {
-        if (!list.length || pinned[i]) {
-          next[i * 3 + k] = p[i * 3 + k];
-          continue;
-        }
-        let sum = 0;
-        for (const j of list) sum += p[j * 3 + k];
-        next[i * 3 + k] = p[i * 3 + k] + factor * (sum / list.length - p[i * 3 + k]);
-      }
-    }
-    p.set(next);
-  };
-  for (let i = 0; i < iterations; i++) {
-    pass(lambda);
-    pass(mu);
-  }
-  position.needsUpdate = true;
-}
-
+// The mask as prepared at build time: the neutralised surface to draw, plus the scan's own
+// positions, where the features (lips, eyes) the rig uses were measured.
 export async function loadHeadGeometry() {
-  const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
-  let source = null;
-  gltf.scene.traverse((node) => {
-    if (!source && node.isMesh) source = node;
-  });
-  if (!source) throw new Error('head model has no mesh');
-  let geometry = source.geometry.clone();
-  geometry.applyMatrix4(source.matrixWorld);
-  const box = cropToHead(geometry);
-  const center = box.getCenter(new THREE.Vector3());
-  const height = box.max.y - box.min.y;
-  geometry.translate(-center.x, -center.y, -center.z);
-  geometry.scale(HEAD_HEIGHT / height, HEAD_HEIGHT / height, HEAD_HEIGHT / height);
-  geometry.deleteAttribute('uv');
-  geometry.deleteAttribute('normal');
-  geometry = mergeVertices(geometry, 1e-4);
-  geometry = keepMaskRegion(geometry);
-  geometry = subdivide(geometry);
-  // The feature measurements (lips, eyes) were taken on the scan as-is, so the rig is built
-  // from these positions; neutralising moves the vertices but keeps their order.
-  geometry.userData.scanPositions = Float32Array.from(geometry.attributes.position.array);
-  neutralise(geometry);
+  const response = await fetch(MASK_URL);
+  if (!response.ok) throw new Error(`mask model: HTTP ${response.status}`);
+  const { index, scan, neutral } = decodeMask(await response.arrayBuffer());
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(neutral, 3));
+  geometry.setIndex(new THREE.BufferAttribute(index, 1));
+  geometry.userData.scanPositions = scan;
   geometry.computeVertexNormals();
   return geometry;
-}
-
-// Keeps only the triangles around the mask (the face's front, with a margin beyond the oval
-// the alpha cut makes), so the back of the head isn't subdivided and smoothed for nothing.
-function keepMaskRegion(geometry) {
-  const position = geometry.attributes.position;
-  const index = geometry.index.array;
-  const inRegion = (i) =>
-    position.getZ(i) > MASK.backZ - 0.2 &&
-    position.getY(i) > MASK.chinCutY - 0.15 &&
-    Math.hypot(position.getX(i) / MASK.halfWidth, (position.getY(i) - MASK.centerY) / MASK.halfHeight) < 1.15;
-  const remap = new Map();
-  const positions = [];
-  const kept = [];
-  const vertex = (i) => {
-    if (!remap.has(i)) {
-      remap.set(i, positions.length / 3);
-      positions.push(position.getX(i), position.getY(i), position.getZ(i));
-    }
-    return remap.get(i);
-  };
-  for (let t = 0; t < index.length; t += 3) {
-    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
-    if (inRegion(a) && inRegion(b) && inRegion(c)) kept.push(vertex(a), vertex(b), vertex(c));
-  }
-  const result = new THREE.BufferGeometry();
-  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  result.setIndex(kept);
-  return result;
-}
-
-// Splits every triangle into four at its edge midpoints (shared edges share one new vertex),
-// giving the smoothing a finer surface to work on and the eye and mouth cut-outs finer edges.
-function subdivide(geometry) {
-  const position = geometry.attributes.position;
-  const index = geometry.index.array;
-  const positions = Array.from(position.array);
-  const midpoints = new Map();
-  const midpoint = (a, b) => {
-    const key = a < b ? a * position.count + b : b * position.count + a;
-    let m = midpoints.get(key);
-    if (m === undefined) {
-      m = positions.length / 3;
-      for (let k = 0; k < 3; k++) positions.push((positions[a * 3 + k] + positions[b * 3 + k]) / 2);
-      midpoints.set(key, m);
-    }
-    return m;
-  };
-  const triangles = [];
-  for (let t = 0; t < index.length; t += 3) {
-    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
-    const ab = midpoint(a, b);
-    const bc = midpoint(b, c);
-    const ca = midpoint(c, a);
-    triangles.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
-  }
-  const result = new THREE.BufferGeometry();
-  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  result.setIndex(triangles);
-  return result;
-}
-
-// Turns a specific (male) scan into an idealised, genderless face. Features are toned down
-// rather than blurred: a heavily smoothed "blank" of the face is computed, and the real
-// features are blended back at partial strength, so the nose, brow and jaw become less
-// pronounced while the face keeps its structure — the way sculpted masks read as no one in
-// particular. A light final smoothing and a slightly narrower jaw finish it.
-function neutralise(geometry) {
-  const position = geometry.attributes.position;
-  const original = Float32Array.from(position.array);
-  smoothSurface(geometry, MASK.blankIterations, 0.6, 0);
-  const p = position.array;
-  for (let i = 0; i < p.length; i++) p[i] += MASK.featureStrength * (original[i] - p[i]);
-  smoothSurface(geometry, MASK.smoothIterations, 0.5, -0.53);
-  for (let i = 0; i < position.count; i++) {
-    const y = position.getY(i);
-    position.setX(i, position.getX(i) * (1 - MASK.jawNarrowing * smoothstep(-0.3, -0.85, y)));
-  }
 }
 
 // How each vertex takes part in the face's movement, computed once from the resting shape.

@@ -1,8 +1,9 @@
 // Voice widget. Holds only the Vapi public key and assistant id (fetched from /config.json);
 // every support decision happens on the server behind Vapi.
-import * as VapiModule from 'https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm';
-
-const Vapi = VapiModule.default?.default ?? VapiModule.default;
+// Started straight away but not waited on here: Relay's face, the chat bar and the rest of the
+// page don't depend on the voice SDK, so nothing waits for it to download. If it can't load,
+// voice is shown as unavailable and typing still works.
+const vapiSdk = import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm').then((module) => module.default?.default ?? module.default);
 
 const el = {
   console: document.getElementById('console'),
@@ -586,7 +587,7 @@ function onMute() {
 async function init() {
   setState('loading');
   try {
-    const response = await fetch('/config.json');
+    const [Vapi, response] = await Promise.all([vapiSdk, fetch('/config.json')]);
     if (!response.ok) throw new Error(`config request failed with ${response.status}`);
     const config = await response.json();
     assistantId = config.assistantId;

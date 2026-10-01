@@ -15,11 +15,18 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js"
         }
       }
     </script>
+    <!-- Fetched in parallel from the first moment, instead of each waiting for the one before:
+         Relay's face (Three.js, its code and the prepared mask) and the voice SDK. -->
+    <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js" />
+    <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js" />
+    <link rel="modulepreload" href="/face.js" />
+    <link rel="modulepreload" href="/face-shape.js" />
+    <link rel="preload" href="/models/relay-mask.bin" as="fetch" crossorigin />
+    <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
