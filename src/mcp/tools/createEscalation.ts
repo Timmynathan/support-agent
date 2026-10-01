@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db, DbError, must, mustRow, UNIQUE_VIOLATION } from '../../shared/db.js';
-import { CATEGORIES, normalizeReference } from '../../shared/domain.js';
+import { agentToolName, CATEGORIES, normalizeReference } from '../../shared/domain.js';
 import type { ToolContext } from '../context.js';
 import { defineTool, refused } from '../tool.js';
 import { customerForWrite } from '../verification.js';
@@ -19,8 +19,10 @@ export const createEscalation = defineTool({
     'Escalate to human support. Use for account restrictions, compliance or verification concerns, disputes, refunds, ' +
     'cancellations, a frustrated caller, or anything the knowledge base does not cover. Map refunds and cancellations ' +
     'to category "dispute". If the caller is verified, their name and email are taken from the account record, so ' +
-    'do not ask them to spell an email. preferred_time is the caller\'s own words. Speak follow_up_summary to the ' +
-    'caller; never read back their email. One open escalation per conversation — calling again returns the existing one.',
+    'do not ask for them. Never ask a caller to say or spell an email: ask them to type it. preferred_time is the ' +
+    'caller\'s own words. Speak follow_up_summary to the caller; never read back their email. One open escalation per ' +
+    'conversation — calling again returns the existing one and fills in any contact details it was missing. ' +
+    'missing_contact lists what the specialist still needs to call back.',
   input: z.object({
     ticket_id: z.string().trim().min(1).max(20).optional(),
     customer_id: z.string().trim().min(1).max(20).optional(),
@@ -79,6 +81,7 @@ export const createEscalation = defineTool({
           status: row.status,
           already_existed: true,
           follow_up_summary: followUpSummary(row),
+          ...contactStatus(row),
         },
         logSummary: { escalation_id: row.escalation_id, already_existed: true, filled_fields: filled },
       };
@@ -92,13 +95,7 @@ export const createEscalation = defineTool({
         status: escalation.status,
         already_existed: false,
         follow_up_summary: followUpSummary(escalation),
-        ...(contact.contact_source === 'none'
-          ? {
-              message_for_agent:
-                'No contact details are on this escalation, so nobody can call back yet. Ask for a name and email, ' +
-                'or tell the caller they can also reach support through the RelayPay dashboard.',
-            }
-          : {}),
+        ...contactStatus(escalation),
       },
       logSummary: {
         escalation_id: escalation.escalation_id,
@@ -112,6 +109,24 @@ export const createEscalation = defineTool({
     };
   },
 });
+
+type ContactField = 'name' | 'email';
+
+// What the escalation still lacks for a callback: field names only, never the values. The voice
+// path holds back its goodbye while this is not empty (src/agent/closing.ts).
+function contactStatus(row: { user_name: string | null; user_email: string | null }): { missing_contact: ContactField[]; message_for_agent?: string } {
+  const missing: ContactField[] = [];
+  if (!row.user_name) missing.push('name');
+  if (!row.user_email) missing.push('email');
+  if (missing.length === 0) return { missing_contact: missing };
+  return {
+    missing_contact: missing,
+    message_for_agent:
+      `This escalation has no ${missing.join(' or ')} yet, so nobody can call back. Ask for ${missing.length === 2 ? 'them' : 'it'}` +
+      (missing.includes('email') ? ' (set ask_to_type to email for the email)' : '') +
+      `, then call ${agentToolName('create_escalation')} again with what the caller gives.`,
+  };
+}
 
 // Caller-given details win (they may want a different callback address); gaps are filled from
 // the verified record; anything still missing is recorded as missing, with the reason why.

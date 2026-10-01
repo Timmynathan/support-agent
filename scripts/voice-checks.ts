@@ -1,6 +1,8 @@
 // Offline checks for the voice path: streaming parse of the structured turn output, and
 // normalisation of references garbled by speech-to-text. No network, no model.
+import { readdirSync, readFileSync } from 'node:fs';
 import { CLOSING_LINES, closingLine, END_CALL_PHRASE, withoutEndCallPhrase } from '../src/agent/closing.js';
+import { SYSTEM_PROMPT } from '../src/agent/prompt.js';
 import { StructuredSpeechParser } from '../src/agent/speechStream.js';
 import { normalizeSpokenReferences, speakableReferences } from '../src/voice/transcript.js';
 
@@ -75,7 +77,7 @@ check(
 // Closing lines: which one code adds, and when.
 check('goodbye line contains the end-call phrase', CLOSING_LINES.goodbye.toLowerCase().includes(END_CALL_PHRASE), true);
 check('model text cannot end the call', withoutEndCallPhrase('Thanks, goodbye for now!').toLowerCase().includes(END_CALL_PHRASE), false);
-const base = { askToType: 'none', endCall: false, answerType: 'answer', text: 'Fees vary by corridor.', escalationCreatedThisTurn: false, followUpDeferred: false } as const;
+const base = { askToType: 'none', endCall: false, answerType: 'answer', text: 'Fees vary by corridor.', escalationCreatedThisTurn: false, followUpDeferred: false, missingContact: [] as string[] } as const;
 const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]> = [
   ['answer gets the follow-up question', base, CLOSING_LINES.anythingElse],
   ['answer already ending in a question gets nothing', { ...base, text: 'Would you like me to raise it?' }, null],
@@ -96,7 +98,31 @@ const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]
   ['caller declines the offer: asked now', { ...base, answerType: 'social', text: 'No problem.', followUpDeferred: true }, CLOSING_LINES.anythingElse],
   ['caller accepts, ticket created: asked now', { ...base, text: "I've logged ticket TKT-00015.", followUpDeferred: true }, CLOSING_LINES.anythingElse],
   ['caller finishes instead: goodbye wins', { ...base, answerType: 'social', endCall: true, text: 'Goodbye.', followUpDeferred: true }, CLOSING_LINES.goodbye],
+  // An escalation nobody can call back on: no goodbye, no "anything else?", keep asking.
+  ['caller tries to finish, no contact: goodbye held', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['name', 'email'] }, CLOSING_LINES.contact_name_email],
+  ['caller tries to finish, email missing: asked to type', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['email'] }, CLOSING_LINES.contact_email],
+  ['caller tries to finish, name missing: asked for name', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['name'] }, CLOSING_LINES.contact_name],
+  ['farewell that asks for email still held (farewell is dropped)', { ...base, answerType: 'social', endCall: true, text: 'Bye! Please type your email in the chat box below.', missingContact: ['email'] }, CLOSING_LINES.contact_email],
+  ['other question answered meanwhile: still asked', { ...base, missingContact: ['email'] }, CLOSING_LINES.contact_email],
+  ['reply already asks for both: nothing added', { ...base, answerType: 'escalate', text: 'Could I get your name? Please type your email in the chat box below.', missingContact: ['name', 'email'] }, null],
+  ['reply asks only for the name: email still requested', { ...base, answerType: 'escalate', text: 'Could I get your name?', missingContact: ['name', 'email'] }, CLOSING_LINES.contact_email],
+  ['contact complete: goodbye allowed again', { ...base, answerType: 'social', endCall: true, text: 'Bye.', missingContact: [] }, CLOSING_LINES.goodbye],
 ];
+check('every contact line asks for what it names', [CLOSING_LINES.contact_name_email, CLOSING_LINES.contact_email].every((line) => /type your email/i.test(line)) && /your name/i.test(CLOSING_LINES.contact_name), true);
 for (const [name, input, want] of closings) check(`closing: ${name}`, closingLine(input)?.line ?? null, want);
+
+// The model must only ever see full tool names; a bare one gets called and refused by the SDK.
+const TOOL_NAMES = ['lookup_customer', 'lookup_transaction', 'lookup_payout', 'create_support_ticket', 'create_escalation', 'log_conversation_event'];
+const bareToolName = new RegExp(`(?<!mcp__relaypay__)\\b(${TOOL_NAMES.join('|')})\\b`, 'g');
+check('prompt names tools only by their full names', SYSTEM_PROMPT.match(bareToolName), null);
+for (const file of readdirSync('src/mcp/tools')) {
+  // A tool's own protocol name (name: 'lookup_customer'), agentToolName('…') calls and code
+  // comments are not text the model reads.
+  const source = readFileSync(`src/mcp/tools/${file}`, 'utf8')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/name: '[a-z_]+'/g, '')
+    .replace(/agentToolName\('[a-z_]+'\)/g, '');
+  check(`tool text in ${file} names tools only by their full names`, source.match(bareToolName), null);
+}
 check('closing: held back is recorded as deferred', closingLine({ ...base, text: "I can raise it if you'd like." })?.note, 'follow_up_question_deferred');
 process.exitCode = bad;

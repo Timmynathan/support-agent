@@ -90,6 +90,7 @@ function setState(name) {
   const s = STATES[name];
   el.console.dataset.state = name;
   el.console.dataset.inCall = String(s.inCall);
+  document.body.dataset.inCall = String(s.inCall);
   el.callButton.dataset.state = name;
   el.callButton.dataset.inCall = String(s.inCall);
   el.statusText.textContent = s.status;
@@ -603,9 +604,4 @@ el.chatForm.addEventListener('submit', (event) => {
   el.chatInput.value = '';
   void onAsk(question);
 });
-// The dock grows during a call (status row, conversation thread); the page keeps exactly that
-// much room below its content, so nothing ends up permanently underneath it.
-new ResizeObserver(([entry]) => {
-  document.documentElement.style.setProperty('--dock-clearance', `${Math.ceil(entry.borderBoxSize[0].blockSize)}px`);
-}).observe(document.querySelector('.dock'));
 void init();

@@ -1,6 +1,14 @@
 // Every enum and rule constant lives here once. schema.sql mirrors these as CHECK constraints
 // so the database refuses what the code would refuse.
 
+// The agent reaches the MCP tools through the SDK, which names each one
+// mcp__<server>__<tool>. A model told the bare name sometimes calls it ("No such tool
+// available"), so any text the model reads names tools with agentToolName().
+export const MCP_SERVER_NAME = 'relaypay';
+export function agentToolName(tool: string): string {
+  return `mcp__${MCP_SERVER_NAME}__${tool}`;
+}
+
 export const CHANNELS = ['voice', 'text', 'cli'] as const;
 export type Channel = (typeof CHANNELS)[number];
 

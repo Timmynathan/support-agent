@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db, must } from '../../shared/db.js';
-import { normalizeReference, STATUSES_REQUIRING_HUMAN, todayIsoDate } from '../../shared/domain.js';
+import { agentToolName, normalizeReference, STATUSES_REQUIRING_HUMAN, todayIsoDate } from '../../shared/domain.js';
 import { defineTool, refused } from '../tool.js';
 import { verifiedCustomerId } from '../verification.js';
 
@@ -26,7 +26,7 @@ export const lookupTransaction = defineTool({
   description:
     'Look up a transaction by the reference the caller gave (e.g. TXN-9001). Returns its status and customer-safe ' +
     'summary. Amount and currency are included only if the caller has already been verified as the owning customer ' +
-    'via lookup_customer. Do not state an arrival time beyond estimated_arrival, and treat a null estimate as unknown.',
+    `via ${agentToolName('lookup_customer')}. Do not state an arrival time beyond estimated_arrival, and treat a null estimate as unknown.`,
   input: z.object({
     transaction_id: z.string().trim().min(1).max(20),
   }),

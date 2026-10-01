@@ -10,17 +10,15 @@
 
 body {
   margin: 0;
-  min-height: 100dvh;
+  height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   line-height: var(--line-height-base);
   -webkit-font-smoothing: antialiased;
-  /* Room under the page content for the pinned dock, so it never covers the page content. */
-  padding-bottom: var(--dock-clearance);
 }
 
 button {
@@ -78,10 +76,13 @@ button {
   min-width: 0;
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: 0 var(--gutter) var(--space-6);
+  padding: 0 var(--gutter) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* Only on a very short screen, once Relay is at its smallest, does the stage scroll. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Page entrance: seen once per visit, so a short stagger is allowed. Never blocks input. */
@@ -158,14 +159,19 @@ button {
 
 /* ── Relay, the steel face ─────────────────────────────────────────────── */
 
+/* Takes whatever height the stage has left; Relay is sized to fit it (container units). */
 .mascot-stage {
+  flex: 1 1 0;
+  min-height: var(--size-mascot-min);
+  container-type: size;
   display: grid;
   justify-items: center;
+  align-content: center;
 }
 
 .mascot {
   position: relative;
-  width: var(--size-mascot);
+  width: var(--size-mascot-fit);
   aspect-ratio: 1;
 }
 
@@ -212,6 +218,19 @@ button {
 }
 
 /* Topics Relay covers: labels, not buttons, so they look quieter than the question chips. */
+/* What Relay can help with: an invitation before the call, not needed once talking. */
+body[data-in-call='true'] .topics {
+  display: none;
+}
+
+/* On a shorter screen the greeting gives its room to Relay during a call; the status line in
+   the dock already says what is happening. */
+@media (max-height: 44rem) {
+  body[data-in-call='true'] .hero {
+    display: none;
+  }
+}
+
 .topics {
   margin: calc(var(--space-2) * -1) 0 0;
   padding: 0;
@@ -489,11 +508,6 @@ button {
 /* A full-width strip in the page colour, so content scrolling underneath disappears cleanly
    behind it rather than peeking out around the pill. */
 .dock {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 10;
   padding: var(--space-2) var(--gutter) var(--space-4);
   background: var(--color-bg);
   display: flex;
@@ -643,6 +657,8 @@ button {
 }
 
 .chat-message {
+  /* Contains its screen-reader label ("You said:"), which would otherwise stretch the page. */
+  position: relative;
   max-width: var(--bubble-max-width);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);

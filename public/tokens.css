@@ -77,8 +77,7 @@
   /* Size */
   --content-width: 34rem;
   --dock-width: 30rem;
-  --dock-clearance: 4.5rem;
-  --thread-height: min(18rem, 40dvh);
+  --thread-height: min(11rem, 22dvh);
   --bubble-max-width: 85%;
   --size-send: 1.875rem;
   --lede-width: 28rem;
@@ -87,8 +86,11 @@
   --call-ring-scale-y: 1.5;
   --duration-call-ring: 2.8s;
   --size-mascot: min(17rem, 68vw);
+  /* The largest Relay that fits its box (used inside .mascot-stage, a size container). */
+  --size-mascot-fit: min(var(--size-mascot), 100cqw, calc(100cqh - var(--size-mascot-shadow-height)));
+  --size-mascot-min: 7rem;
   --size-mascot-shadow-height: 1.25rem;
-  --mascot-shadow-width: calc(var(--size-mascot) * 0.42);
+  --mascot-shadow-width: calc(var(--size-mascot-fit) * 0.42);
   --mascot-placeholder-inset: 18%;
   --mascot-placeholder-opacity: 0.12;
   --mascot-shadow-blur: 14px;

@@ -2,11 +2,11 @@ import { resolve } from 'node:path';
 import { query, type Query, type SDKMessage, type SDKPartialAssistantMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Channel } from '../shared/domain.js';
+import { agentToolName, MCP_SERVER_NAME } from '../shared/domain.js';
 import { RUNNING_COMPILED } from '../shared/paths.js';
 import { SYSTEM_PROMPT, TURN_OUTPUT_SCHEMA } from './prompt.js';
 
 export const AGENT_MODEL = process.env.AGENT_MODEL ?? 'claude-sonnet-5';
-const MCP_SERVER_NAME = 'relaypay';
 const RELAYPAY_TOOLS = [
   'lookup_customer',
   'lookup_transaction',
@@ -31,6 +31,9 @@ export interface ToolEvent {
   input: unknown;
   result: Record<string, unknown> | null;
   isError: boolean;
+  // The tool_result's own words when they aren't a JSON result — usually the SDK refusing the
+  // call before it reached the MCP server. Kept so the decision log says why, not just "no result".
+  rawError: string | null;
 }
 
 // Live signals from a turn in progress, used by the voice path to speak before the turn ends.
@@ -72,9 +75,14 @@ export class AgentSession {
         outputFormat: { type: 'json_schema', schema: TURN_OUTPUT_SCHEMA },
         // No built-in Claude Code tools (Bash, Read, …): the six RelayPay tools are the whole surface.
         tools: [],
-        allowedTools: RELAYPAY_TOOLS.map((name) => `mcp__${MCP_SERVER_NAME}__${name}`),
+        allowedTools: RELAYPAY_TOOLS.map(agentToolName),
+        // Hidden, not just refused: a tool the model can see but not use gets tried anyway.
+        disallowedTools: [agentToolName('log_conversation_event')],
         permissionMode: 'dontAsk',
         settingSources: [],
+        // Only the RelayPay server. Without this, a Claude process running under a developer's
+        // login also loads their personal claude.ai connectors (seen: ~110 tools on this machine).
+        strictMcpConfig: true,
         persistSession: false,
         maxTurns: MAX_TURNS,
         includePartialMessages: true,
@@ -137,7 +145,7 @@ export class AgentSession {
       for (const block of message.message.content) {
         // StructuredOutput is the SDK's internal carrier for outputFormat, not a RelayPay tool.
         if (block.type !== 'tool_use' || block.name === 'StructuredOutput') continue;
-        const event: ToolEvent = { name: block.name.replace(`mcp__${MCP_SERVER_NAME}__`, ''), input: block.input, result: null, isError: false };
+        const event: ToolEvent = { name: block.name.replace(agentToolName(''), ''), input: block.input, result: null, isError: false, rawError: null };
         this.pendingTools.set(block.id, event);
         this.turnTools.push(event);
       }
@@ -150,6 +158,7 @@ export class AgentSession {
         if (!event) continue;
         event.isError = block.is_error === true;
         event.result = parseToolResult(block.content);
+        if (!event.result) event.rawError = toolResultText(block.content).slice(0, RAW_ERROR_MAX_CHARS) || null;
         this.pendingTools.delete(block.tool_use_id);
       }
       return;
@@ -183,7 +192,7 @@ export class AgentSession {
       }
       const structured = block.name === 'StructuredOutput';
       this.blockKinds.set(event.index, structured ? 'structured' : 'tool');
-      if (!structured) callHook(() => hooks?.onToolStart?.(block.name.replace(`mcp__${MCP_SERVER_NAME}__`, '')));
+      if (!structured) callHook(() => hooks?.onToolStart?.(block.name.replace(agentToolName(''), '')));
       return;
     }
     if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta' && this.blockKinds.get(event.index) === 'structured') {
@@ -207,12 +216,18 @@ function callHook(invoke: () => void): void {
   }
 }
 
-function parseToolResult(content: unknown): Record<string, unknown> | null {
-  const text = Array.isArray(content)
+const RAW_ERROR_MAX_CHARS = 400;
+
+function toolResultText(content: unknown): string {
+  return Array.isArray(content)
     ? content.map((part) => (typeof part === 'object' && part && 'text' in part ? String(part.text) : '')).join('')
     : typeof content === 'string'
       ? content
       : '';
+}
+
+function parseToolResult(content: unknown): Record<string, unknown> | null {
+  const text = toolResultText(content);
   try {
     const parsed: unknown = JSON.parse(text);
     return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;

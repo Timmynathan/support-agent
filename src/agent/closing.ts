@@ -12,6 +12,10 @@ export const CLOSING_LINES = {
   // Emails and customer IDs are typed, not spoken: speech-to-text garbles both.
   type_email: 'Please type your email in the chat box below.',
   type_customer_id: 'Please type your customer ID in the chat box below.',
+  // An escalation nobody can call back on is not finished, so the caller is asked until it is.
+  contact_name_email: 'Before we finish, our specialist needs a way to reach you. Could you tell me your name? And please type your email in the chat box below.',
+  contact_email: 'Before we finish, our specialist needs a way to reach you. Please type your email in the chat box below.',
+  contact_name: 'Before we finish, our specialist needs a name to ask for. Could you tell me your name?',
 } as const;
 
 export const ASK_TO_TYPE = ['none', 'email', 'customer_id'] as const;
@@ -29,6 +33,8 @@ export interface ClosingInput {
   // The previous reply finished something but left the caller a question or an offer to answer
   // first, so "anything else?" was held back until now.
   followUpDeferred: boolean;
+  // Contact details the conversation's open escalation still lacks ("name", "email").
+  missingContact: readonly string[];
 }
 
 // `line` is null when the follow-up question is held back for a later turn.
@@ -39,6 +45,7 @@ export interface Closing {
 
 const ENDS_WITH_QUESTION = /\?\s*$/;
 const ASKS_TO_TYPE = /\btype your\b/i;
+const ASKS_NAME = /\byour name\b/i;
 // An offer phrased without a question mark: "I can raise this with the team if you'd like."
 const OFFER = /\b(if you'?d like|if you would like|if you want|would you like|do you want|want me to|shall i|should i|let me know)\b/i;
 
@@ -55,6 +62,15 @@ export function closingLine(input: ClosingInput): Closing | null {
   if (input.askToType !== 'none' && input.answerType !== 'social') {
     if (ASKS_TO_TYPE.test(input.text)) return null;
     return { line: CLOSING_LINES[`type_${input.askToType}`], note: `ask_to_type_${input.askToType}` };
+  }
+  if (input.missingContact.length > 0) {
+    // A held goodbye replaces the model's farewell, so only words that will be heard count.
+    const heard = input.endCall ? '' : input.text;
+    const needName = input.missingContact.includes('name') && !ASKS_NAME.test(heard);
+    const needEmail = input.missingContact.includes('email') && !ASKS_TO_TYPE.test(heard);
+    if (!needName && !needEmail) return { line: null, note: 'contact_already_requested' };
+    const key = needName && needEmail ? 'contact_name_email' : needEmail ? 'contact_email' : 'contact_name';
+    return { line: CLOSING_LINES[key], note: input.endCall ? 'goodbye_held_for_contact' : 'contact_requested' };
   }
   if (input.endCall && input.answerType === 'social') {
     return { line: CLOSING_LINES.goodbye, note: 'call_ended_by_agent' };

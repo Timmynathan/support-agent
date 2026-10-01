@@ -96,6 +96,8 @@ export class Conversation {
   private escalationCreated = false;
   // "Anything else?" is owed: an earlier reply finished something but ended on its own question.
   private followUpDeferred = false;
+  // Contact details the open escalation still lacks, from create_escalation's latest result.
+  private missingContact: readonly string[] = [];
   private lastAnswerType: AnswerType | 'error' | null = null;
   private interruptedTurn: number | null = null;
   // The previous turn was cut off before the caller heard any of the actual reply.
@@ -353,7 +355,8 @@ export class Conversation {
     let text = verdict.override ?? output.spoken_text;
     const extra: string[] = [];
 
-    const escalation = tools.find((tool) => tool.name === 'create_escalation' && tool.result?.ok === true)?.result;
+    const escalation = tools.findLast((tool) => tool.name === 'create_escalation' && tool.result?.ok === true)?.result;
+    if (Array.isArray(escalation?.missing_contact)) this.missingContact = escalation.missing_contact.filter((field): field is string => typeof field === 'string');
     const escalationId = typeof escalation?.escalation_id === 'string' ? escalation.escalation_id : null;
     if (escalationId && !mentionsReference(text, escalationId) && typeof escalation?.follow_up_summary === 'string') {
       extra.push(escalation.follow_up_summary);
@@ -372,6 +375,7 @@ export class Conversation {
         text: [safe, ...extra].join(' '),
         escalationCreatedThisTurn: escalationId !== null,
         followUpDeferred: this.followUpDeferred,
+        missingContact: this.missingContact,
       });
       if (closing) {
         if (closing.line) extra.push(closing.line);
@@ -379,7 +383,7 @@ export class Conversation {
         this.followUpDeferred = closing.note === 'follow_up_question_deferred' || (this.followUpDeferred && closing.line === null);
         // The goodbye is the whole reply: the model's own farewell would only repeat it. A
         // social reply is held until complete, so none of it has been spoken yet.
-        if (closing.note === 'call_ended_by_agent') safe = '';
+        if (closing.note === 'call_ended_by_agent' || closing.note === 'goodbye_held_for_contact') safe = '';
       }
     }
     const full = [safe, ...extra].filter(Boolean).join(' ');
@@ -608,8 +612,9 @@ function mentionsReference(text: string, reference: string): boolean {
   return normalize(text).includes(normalize(reference));
 }
 
-function toolSummary(tool: ToolEvent): { name: string; outcome: string } {
+function toolSummary(tool: ToolEvent): { name: string; outcome: string; error?: string } {
   const result = tool.result;
+  if (!result && tool.rawError) return { name: tool.name, outcome: tool.isError ? 'rejected' : 'unparsed_result', error: tool.rawError };
   const outcome = !result
     ? 'no_result'
     : result.refused
