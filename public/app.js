@@ -465,23 +465,7 @@ function attachEvents() {
       flushPendingQuestion();
     }, GREETING_FALLBACK_MS);
   });
-  vapi.on('call-end', () => {
-    // Vapi's reason often arrives after the call has ended, or not at all, so a caller left
-    // without a reply also counts as a call that went wrong — never a quiet "ended".
-    const unanswered = chat.awaitingReply;
-    const endedNormally = /customer-ended-call|assistant-ended-call|assistant-said-end-call-phrase/.test(endedReason ?? '');
-    const failed = endedReason ? !endedNormally : unanswered;
-    addDivider(failed ? 'Call dropped before Relay could answer' : 'Conversation ended');
-    if (!failed) {
-      setState('ended');
-      return;
-    }
-    setState('error');
-    showError(
-      ENDED_REASONS[endedReason] ?? 'The call ended before Relay could answer. Please try again.',
-      `Vapi ended reason: ${endedReason ?? 'not reported to the browser'}`,
-    );
-  });
+  vapi.on('call-end', onCallEnded);
   vapi.on('speech-start', () => {
     releaseDoneHold();
     if (state === 'listening' || state === 'thinking') setState('speaking');
@@ -513,9 +497,40 @@ function attachEvents() {
     if (message?.type === 'transcript') onTranscript(message);
   });
   vapi.on('error', (error) => {
+    // The call library reports the meeting closing (Relay's goodbye, Vapi hanging up) as an
+    // "ejected" error. It is the end of the call, judged like any other end, not a failure.
+    if (isMeetingEnded(error)) {
+      onCallEnded();
+      return;
+    }
     setState('error');
     showError('Something interrupted the call. Please try again.', describe(error));
   });
+}
+
+function isMeetingEnded(error) {
+  const inner = error?.error ?? error;
+  return [inner?.type, inner?.error?.type, inner?.message?.type].includes('ejected');
+}
+
+// Runs once per call, whichever arrives first: Vapi's call-end or the library's "ejected".
+function onCallEnded() {
+  if (!STATES[state].inCall) return;
+  // Vapi's reason often arrives after the call has ended, or not at all, so a caller left
+  // without a reply also counts as a call that went wrong — never a quiet "ended".
+  const unanswered = chat.awaitingReply;
+  const endedNormally = /customer-ended-call|assistant-ended-call|assistant-said-end-call-phrase/.test(endedReason ?? '');
+  const failed = endedReason ? !endedNormally : unanswered;
+  addDivider(failed ? 'Call dropped before Relay could answer' : 'Conversation ended');
+  if (!failed) {
+    setState('ended');
+    return;
+  }
+  setState('error');
+  showError(
+    ENDED_REASONS[endedReason] ?? 'The call ended before Relay could answer. Please try again.',
+    `Vapi ended reason: ${endedReason ?? 'not reported to the browser'}`,
+  );
 }
 
 async function startCall() {
