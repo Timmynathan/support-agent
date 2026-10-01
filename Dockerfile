@@ -1,5 +1,5 @@
 # RelayPay support agent: voice webhook server + Claude Agent SDK + MCP server, one container.
-# Built by Render from render.yaml. Secrets are set in the Render dashboard, never baked in.
+# Built by Railway from this Dockerfile. Secrets are set as Railway service variables, never baked in.
 
 FROM node:24-slim AS build
 WORKDIR /app

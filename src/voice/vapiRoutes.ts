@@ -178,8 +178,8 @@ export function routeVoice(req: IncomingMessage, res: ServerResponse): Promise<v
   const path = (req.url ?? '/').split('?')[0]!;
   if (req.method === 'POST' && path === '/vapi/chat/completions') return chatCompletions(req, res);
   if (req.method === 'POST' && path === '/vapi/webhook') return webhook(req, res);
-  if (req.method === 'GET' && path === '/config.json') return Promise.resolve(widgetConfig(res));
-  if (req.method === 'GET' && path === '/health') return Promise.resolve(sendJson(res, 200, { ok: true }));
+  if (req.method === 'GET' && path === '/config.json') return Promise.resolve().then(() => widgetConfig(res));
+  if (req.method === 'GET' && path === '/health') return Promise.resolve().then(() => sendJson(res, 200, { ok: true }));
   const entry = req.method === 'GET' ? STATIC_FILES[path] : undefined;
   if (entry) return staticFile(res, entry);
   return null;

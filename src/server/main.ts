@@ -14,7 +14,7 @@ import { routeText } from './textRoutes.js';
 const TEXT_HOST = '127.0.0.1';
 const TEXT_PORT = Number(process.env.TEXT_PORT ?? 8787);
 const VOICE_HOST = process.env.VOICE_HOST ?? '127.0.0.1';
-// Hosting platforms (Render) assign the public port through PORT.
+// Hosting platforms (Railway, Cloud Run) assign the public port through PORT.
 const VOICE_PORT = Number(process.env.VOICE_PORT ?? process.env.PORT ?? 8788);
 
 type Router = (req: IncomingMessage, res: ServerResponse) => Promise<void> | null;
@@ -22,7 +22,14 @@ type Router = (req: IncomingMessage, res: ServerResponse) => Promise<void> | nul
 function listen(name: string, host: string, port: number, router: Router): void {
   const server = createServer((req, res) => {
     const route = `${req.method} ${req.url}`;
-    const handled = router(req, res) ?? Promise.reject(new HttpError(404, 'not found'));
+    // A handler that throws before returning its promise must fail this request, not the
+    // process: an uncaught throw here once took the whole server down on a missing variable.
+    let handled: Promise<void>;
+    try {
+      handled = router(req, res) ?? Promise.reject(new HttpError(404, 'not found'));
+    } catch (error) {
+      handled = Promise.reject(error);
+    }
     handled.catch((error: unknown) => handleError(route, res, error));
   });
   server.listen(port, host, () => process.stdout.write(`${name} listening on http://${host}:${port}\n`));
