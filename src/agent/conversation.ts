@@ -94,6 +94,8 @@ export class Conversation {
   private lastCumulativeApiMs = 0;
   private escalationRequired = false;
   private escalationCreated = false;
+  // "Anything else?" is owed: an earlier reply finished something but ended on its own question.
+  private followUpDeferred = false;
   private lastAnswerType: AnswerType | 'error' | null = null;
   private interruptedTurn: number | null = null;
   // The previous turn was cut off before the caller heard any of the actual reply.
@@ -369,10 +371,12 @@ export class Conversation {
         answerType: verdict.answerType,
         text: [safe, ...extra].join(' '),
         escalationCreatedThisTurn: escalationId !== null,
+        followUpDeferred: this.followUpDeferred,
       });
       if (closing) {
-        extra.push(closing.line);
+        if (closing.line) extra.push(closing.line);
         enforced.push(closing.note);
+        this.followUpDeferred = closing.note === 'follow_up_question_deferred' || (this.followUpDeferred && closing.line === null);
         // The goodbye is the whole reply: the model's own farewell would only repeat it. A
         // social reply is held until complete, so none of it has been spoken yet.
         if (closing.note === 'call_ended_by_agent') safe = '';

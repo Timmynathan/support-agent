@@ -75,7 +75,7 @@ check(
 // Closing lines: which one code adds, and when.
 check('goodbye line contains the end-call phrase', CLOSING_LINES.goodbye.toLowerCase().includes(END_CALL_PHRASE), true);
 check('model text cannot end the call', withoutEndCallPhrase('Thanks, goodbye for now!').toLowerCase().includes(END_CALL_PHRASE), false);
-const base = { askToType: 'none', endCall: false, answerType: 'answer', text: 'Fees vary by corridor.', escalationCreatedThisTurn: false } as const;
+const base = { askToType: 'none', endCall: false, answerType: 'answer', text: 'Fees vary by corridor.', escalationCreatedThisTurn: false, followUpDeferred: false } as const;
 const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]> = [
   ['answer gets the follow-up question', base, CLOSING_LINES.anythingElse],
   ['answer already ending in a question gets nothing', { ...base, text: 'Would you like me to raise it?' }, null],
@@ -89,6 +89,14 @@ const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]
   ['email needed: type line', { ...base, answerType: 'clarify', askToType: 'email', text: 'What email should we use?' }, CLOSING_LINES.type_email],
   ['customer ID needed: type line', { ...base, answerType: 'clarify', askToType: 'customer_id', text: 'I can look that up.' }, CLOSING_LINES.type_customer_id],
   ['type line not repeated', { ...base, answerType: 'escalate', askToType: 'email', text: 'Please type your email in the chat box below.' }, null],
+  // One question at a time (the simulator's TXN-9001 reply ended on an offer, and got two).
+  ['answer ending on an offer: held back', { ...base, text: "It's past its estimate, so I can raise this with our team to look into it if you'd like." }, null],
+  ['answer ending on "would you like": held back', { ...base, text: 'It is processing. Would you like me to raise it' }, null],
+  ['offer earlier, statement last: asked', { ...base, text: "If you'd like a copy, it's in your dashboard. Payouts take two to five days." }, CLOSING_LINES.anythingElse],
+  ['caller declines the offer: asked now', { ...base, answerType: 'social', text: 'No problem.', followUpDeferred: true }, CLOSING_LINES.anythingElse],
+  ['caller accepts, ticket created: asked now', { ...base, text: "I've logged ticket TKT-00015.", followUpDeferred: true }, CLOSING_LINES.anythingElse],
+  ['caller finishes instead: goodbye wins', { ...base, answerType: 'social', endCall: true, text: 'Goodbye.', followUpDeferred: true }, CLOSING_LINES.goodbye],
 ];
 for (const [name, input, want] of closings) check(`closing: ${name}`, closingLine(input)?.line ?? null, want);
+check('closing: held back is recorded as deferred', closingLine({ ...base, text: "I can raise it if you'd like." })?.note, 'follow_up_question_deferred');
 process.exitCode = bad;

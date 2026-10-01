@@ -26,15 +26,30 @@ export interface ClosingInput {
   text: string;
   // An escalation was created this turn, so its reference has just been given.
   escalationCreatedThisTurn: boolean;
+  // The previous reply finished something but left the caller a question or an offer to answer
+  // first, so "anything else?" was held back until now.
+  followUpDeferred: boolean;
 }
 
+// `line` is null when the follow-up question is held back for a later turn.
 export interface Closing {
-  line: string;
+  line: string | null;
   note: string;
 }
 
 const ENDS_WITH_QUESTION = /\?\s*$/;
 const ASKS_TO_TYPE = /\btype your\b/i;
+// An offer phrased without a question mark: "I can raise this with the team if you'd like."
+const OFFER = /\b(if you'?d like|if you would like|if you want|would you like|do you want|want me to|shall i|should i|let me know)\b/i;
+
+function lastSentence(text: string): string {
+  return text.trim().split(/(?<=[.!?])\s+/).at(-1) ?? '';
+}
+
+// The caller has something to answer first: a question, an offer, or a detail to type.
+function awaitsCaller(text: string): boolean {
+  return ENDS_WITH_QUESTION.test(text) || ASKS_TO_TYPE.test(text) || OFFER.test(lastSentence(text));
+}
 
 export function closingLine(input: ClosingInput): Closing | null {
   if (input.askToType !== 'none' && input.answerType !== 'social') {
@@ -45,12 +60,17 @@ export function closingLine(input: ClosingInput): Closing | null {
     return { line: CLOSING_LINES.goodbye, note: 'call_ended_by_agent' };
   }
   // Only once something is finished: an answer, a decline, or an escalation just created. An
-  // escalation still collecting details is waiting on the caller, not done.
-  const finished = input.answerType === 'answer' || input.answerType === 'decline' || (input.answerType === 'escalate' && input.escalationCreatedThisTurn);
-  if (finished && !ENDS_WITH_QUESTION.test(input.text) && !ASKS_TO_TYPE.test(input.text)) {
-    return { line: CLOSING_LINES.anythingElse, note: 'follow_up_question_added' };
-  }
-  return null;
+  // escalation still collecting details is waiting on the caller, not done. A short reply to an
+  // earlier offer ("no thanks" → "No problem.") finishes the thing that offer held back.
+  const finished =
+    input.answerType === 'answer' ||
+    input.answerType === 'decline' ||
+    (input.answerType === 'escalate' && input.escalationCreatedThisTurn) ||
+    (input.answerType === 'social' && input.followUpDeferred);
+  if (!finished) return null;
+  // One question at a time: ask "anything else?" once the caller has answered this one.
+  if (awaitsCaller(input.text)) return { line: null, note: 'follow_up_question_deferred' };
+  return { line: CLOSING_LINES.anythingElse, note: 'follow_up_question_added' };
 }
 
 // The model may not end the call by saying the phrase itself.
