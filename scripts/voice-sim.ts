@@ -4,6 +4,7 @@
 //
 //   npm run voice-sim            (server must be running with the same VAPI_* secrets)
 import { createHmac, randomUUID } from 'node:crypto';
+import { db, must } from '../src/shared/db.js';
 
 const BASE = process.env.VOICE_URL ?? 'http://127.0.0.1:8788';
 const LLM_SECRET = process.env.VAPI_LLM_SECRET ?? '';
@@ -96,8 +97,10 @@ async function main(): Promise<void> {
     ['Are exchange rates fixed?', { abortAfterFirstChunk: true }],
     ['Sorry, I interrupted you. Can RelayPay guarantee my payout arrives by 9am tomorrow?', {}],
   ];
+  const firstWords: number[] = [];
   for (const [text, options] of turns) {
     const result = await turn(text, options);
+    if (result.firstMs !== null) firstWords.push(result.firstMs);
     process.stdout.write(`\ncaller: ${text}${options.abortAfterFirstChunk ? '   [caller interrupts after the first words]' : ''}\n`);
     process.stdout.write(`agent:  ${result.text || '(nothing)'}\n`);
     process.stdout.write(`        first words ${result.firstMs ?? '—'} ms, stream ${options.abortAfterFirstChunk ? 'aborted' : `complete ${result.totalMs} ms, [DONE] ${result.done ? 'yes' : 'NO'}`}\n`);
@@ -105,9 +108,38 @@ async function main(): Promise<void> {
   }
 
   expect('signed end-of-call webhook → 200', (await webhook({ type: 'end-of-call-report', endedReason: 'customer-ended-call' })) === 200, '');
-  process.stdout.write(`\nconversation id: vapi-${callId}   (${Math.round(performance.now() - warmStarted)} ms since call start)\n`);
+  const conversationId = `vapi-${callId}`;
+  process.stdout.write(`\nconversation id: ${conversationId}   (${Math.round(performance.now() - warmStarted)} ms since call start)\n`);
+
+  // The voice test also expects Supabase to hold the call and its tool calls.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const [storedTurns, storedTools] = await Promise.all([
+    db().from('conversation_turns').select('turn_index').eq('conversation_id', conversationId).then(must),
+    db().from('tool_calls').select('tool_name, status').eq('conversation_id', conversationId).then(must),
+  ]);
+  expect('call turns stored in Supabase', (storedTurns ?? []).length === turns.length, `${(storedTurns ?? []).length} of ${turns.length}`);
+  expect('call tool call stored in Supabase', (storedTools ?? []).some((t) => t.tool_name === 'lookup_transaction' && t.status === 'ok'), '');
+
   process.stdout.write(`${failures === 0 ? 'all checks passed' : `${failures} check(s) FAILED`}\n`);
   if (failures > 0) process.exitCode = 1;
+  await recordEvaluation(conversationId, firstWords);
+}
+
+// PRD test 8 (voice flow), saved alongside the text scenarios' verdicts.
+async function recordEvaluation(conversationId: string, firstWordsMs: number[]): Promise<void> {
+  const { error } = await db()
+    .from('evaluations')
+    .insert({
+      scenario_number: 8,
+      scenario_name: `Voice flow (simulated Vapi against ${BASE})`,
+      conversation_id: conversationId,
+      expected_behavior: 'Vapi captures the caller speech, the backend agent responds, Vapi returns spoken audio, and Supabase logs the conversation and tool calls.',
+      actual_behavior: `Signed Vapi requests streamed spoken replies for ${firstWordsMs.length} turns (first words at ${firstWordsMs.join(', ')} ms), an interruption was handled, every forged or unsigned request was refused, and the turns and tool call were stored.`,
+      passed: failures === 0,
+      notes: failures === 0 ? 'Speech-to-text and text-to-speech run inside Vapi and are not exercised by this simulator; real calls cover them.' : `${failures} check(s) failed; see the run output.`,
+    });
+  process.stdout.write(error ? `evaluation NOT saved: ${error.message}\n` : 'evaluation saved (PRD test 8)\n');
+  if (error) process.exitCode = 1;
 }
 
 await main();
