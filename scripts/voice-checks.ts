@@ -88,9 +88,9 @@ const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]
   ['caller finished: goodbye line', { ...base, answerType: 'social', endCall: true, text: "You're welcome." }, CLOSING_LINES.goodbye],
   ['thanks without finishing: nothing', { ...base, answerType: 'social', text: "You're welcome." }, null],
   ['end_call on a non-social reply is ignored', { ...base, endCall: true, text: 'Fees vary.' }, CLOSING_LINES.anythingElse],
-  ['email needed: type line', { ...base, answerType: 'clarify', askToType: 'email', text: 'What email should we use?' }, CLOSING_LINES.type_email],
-  ['customer ID needed: type line', { ...base, answerType: 'clarify', askToType: 'customer_id', text: 'I can look that up.' }, CLOSING_LINES.type_customer_id],
-  ['type line not repeated', { ...base, answerType: 'escalate', askToType: 'email', text: 'Please type your email in the chat box below.' }, null],
+  ['verification needed: form line', { ...base, answerType: 'clarify', askToType: 'verification', text: 'I need to verify you first.' }, CLOSING_LINES.type_verification],
+  ['callback details needed: form line', { ...base, answerType: 'escalate', askToType: 'callback', text: 'A specialist will call you back.' }, CLOSING_LINES.type_callback],
+  ['form line not repeated', { ...base, answerType: 'clarify', askToType: 'verification', text: 'Please use the verification form on screen.' }, null],
   // One question at a time (the simulator's TXN-9001 reply ended on an offer, and got two).
   ['answer ending on an offer: held back', { ...base, text: "It's past its estimate, so I can raise this with our team to look into it if you'd like." }, null],
   ['answer ending on "would you like": held back', { ...base, text: 'It is processing. Would you like me to raise it' }, null],
@@ -99,16 +99,14 @@ const closings: Array<[string, Parameters<typeof closingLine>[0], string | null]
   ['caller accepts, ticket created: asked now', { ...base, text: "I've logged ticket TKT-00015.", followUpDeferred: true }, CLOSING_LINES.anythingElse],
   ['caller finishes instead: goodbye wins', { ...base, answerType: 'social', endCall: true, text: 'Goodbye.', followUpDeferred: true }, CLOSING_LINES.goodbye],
   // An escalation nobody can call back on: no goodbye, no "anything else?", keep asking.
-  ['caller tries to finish, no contact: goodbye held', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['name', 'email'] }, CLOSING_LINES.contact_name_email],
-  ['caller tries to finish, email missing: asked to type', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['email'] }, CLOSING_LINES.contact_email],
-  ['caller tries to finish, name missing: asked for name', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['name'] }, CLOSING_LINES.contact_name],
-  ['farewell that asks for email still held (farewell is dropped)', { ...base, answerType: 'social', endCall: true, text: 'Bye! Please type your email in the chat box below.', missingContact: ['email'] }, CLOSING_LINES.contact_email],
-  ['other question answered meanwhile: still asked', { ...base, missingContact: ['email'] }, CLOSING_LINES.contact_email],
-  ['reply already asks for both: nothing added', { ...base, answerType: 'escalate', text: 'Could I get your name? Please type your email in the chat box below.', missingContact: ['name', 'email'] }, null],
-  ['reply asks only for the name: email still requested', { ...base, answerType: 'escalate', text: 'Could I get your name?', missingContact: ['name', 'email'] }, CLOSING_LINES.contact_email],
+  ['caller tries to finish, no contact: goodbye held', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['name', 'email'] }, CLOSING_LINES.contact],
+  ['caller tries to finish, email missing: still held', { ...base, answerType: 'social', endCall: true, text: 'Goodbye!', missingContact: ['email'] }, CLOSING_LINES.contact],
+  ['farewell mentioning the form is still held (farewell is dropped)', { ...base, answerType: 'social', endCall: true, text: 'Bye! Fill in the callback form on screen.', missingContact: ['email'] }, CLOSING_LINES.contact],
+  ['other question answered meanwhile: still asked', { ...base, missingContact: ['email'] }, CLOSING_LINES.contact],
+  ['reply already points to the callback form: nothing added', { ...base, answerType: 'escalate', text: 'Please fill in the callback form on screen.', missingContact: ['name', 'email'] }, null],
   ['contact complete: goodbye allowed again', { ...base, answerType: 'social', endCall: true, text: 'Bye.', missingContact: [] }, CLOSING_LINES.goodbye],
 ];
-check('every contact line asks for what it names', [CLOSING_LINES.contact_name_email, CLOSING_LINES.contact_email].every((line) => /type your email/i.test(line)) && /your name/i.test(CLOSING_LINES.contact_name), true);
+check('the page can recognise every form request', [CLOSING_LINES.type_verification].every((l) => /verification form/i.test(l)) && [CLOSING_LINES.type_callback, CLOSING_LINES.contact].every((l) => /callback form/i.test(l)), true);
 for (const [name, input, want] of closings) check(`closing: ${name}`, closingLine(input)?.line ?? null, want);
 
 // The model must only ever see full tool names; a bare one gets called and refused by the SDK.

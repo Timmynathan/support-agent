@@ -37,7 +37,83 @@
         </svg>
         RelayPay
       </span>
+      <!-- Phones and narrow windows: the account panel slides in from here. -->
+      <button type="button" class="account-toggle" id="account-toggle" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
+        Account
+      </button>
     </header>
+
+    <!-- The caller's own account panel. Verification is typed here, never spoken, and only
+         lasts for the current call. -->
+    <aside class="sidebar" id="sidebar" aria-labelledby="sidebar-title" data-open="false">
+      <div class="sidebar-head">
+        <h2 class="sidebar-title" id="sidebar-title">Your account</h2>
+        <button type="button" class="sidebar-close" id="sidebar-close" aria-label="Close account panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+
+      <section class="card" id="verify-card" aria-labelledby="verify-title">
+        <h3 class="card-title" id="verify-title">Verify your account</h3>
+        <p class="card-note">Relay needs this before it can look up your account, transactions or payouts. Typed here, never said aloud.</p>
+        <form class="fields" id="verify-form" novalidate>
+          <div class="field">
+            <label for="verify-customer-id">Customer ID</label>
+            <input id="verify-customer-id" name="customer_id" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CUS-0000" maxlength="20" required aria-describedby="verify-customer-id-hint" />
+            <p class="field-hint" id="verify-customer-id-hint">CUS followed by four digits</p>
+          </div>
+          <div class="field">
+            <label for="verify-name">Full name</label>
+            <input id="verify-name" name="full_name" type="text" autocomplete="name" placeholder="As on your account" maxlength="120" required />
+          </div>
+          <div class="field">
+            <label for="verify-email">Email</label>
+            <input id="verify-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@company.com" maxlength="254" required />
+          </div>
+          <p class="form-message" id="verify-message" role="status" aria-live="polite" hidden></p>
+          <button type="submit" class="form-button" id="verify-submit">Verify</button>
+        </form>
+        <div class="verified" id="verified" hidden>
+          <span class="verified-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span>
+          <div>
+            <p class="verified-name"><span id="verified-name"></span> · <span id="verified-company"></span></p>
+            <p class="card-note">Verified for this call</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="callback-card" aria-labelledby="callback-title" hidden>
+        <h3 class="card-title" id="callback-title">Callback details</h3>
+        <p class="card-note">So a RelayPay specialist can reach you.</p>
+        <form class="fields" id="callback-form" novalidate>
+          <div class="field">
+            <label for="callback-name">Full name</label>
+            <input id="callback-name" name="name" type="text" autocomplete="name" maxlength="120" required />
+          </div>
+          <div class="field">
+            <label for="callback-email">Email</label>
+            <input id="callback-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@company.com" maxlength="254" required />
+          </div>
+          <div class="field">
+            <label for="callback-time">Best time to call <span class="field-optional">(optional)</span></label>
+            <input id="callback-time" name="time" type="text" autocomplete="off" placeholder="e.g. Tomorrow at 10am" maxlength="120" />
+          </div>
+          <p class="form-message" id="callback-message" role="status" aria-live="polite" hidden></p>
+          <button type="submit" class="form-button" id="callback-submit">Send details</button>
+        </form>
+      </section>
+
+      <section class="card card-quiet" aria-labelledby="help-title">
+        <h3 class="card-title" id="help-title">Relay can help with</h3>
+        <ul class="help-list">
+          <li>Fees, payout times and policies, with no verification needed</li>
+          <li>Your transactions, payouts and account, once verified</li>
+          <li>Opening a ticket or arranging a callback from a specialist</li>
+        </ul>
+      </section>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
 
     <main class="stage">
       <section class="hero enter">

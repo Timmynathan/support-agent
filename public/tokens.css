@@ -34,6 +34,8 @@
   --shadow-call: 0 10px 28px rgb(22 55 107 / 0.28);
   --shadow-call-danger: 0 10px 28px rgb(180 35 24 / 0.26);
   --shadow-dock: 0 8px 30px rgb(16 24 40 / 0.1);
+  --shadow-drawer: 8px 0 32px rgb(16 24 40 / 0.18);
+  --color-backdrop: rgb(16 24 40 / 0.35);
 
   /* Relay, the steel face (public/face.js reads these). Chrome shows only what it reflects:
      a sky-to-floor dome (sky, bright horizon, blue-grey floor) plus soft blue, teal, white
@@ -77,6 +79,9 @@
   /* Size */
   --content-width: 34rem;
   --dock-width: 30rem;
+  --sidebar-width: 20rem;
+  --drawer-width: min(22rem, 88vw);
+  --field-height: 2.5rem;
   --thread-height: min(11rem, 22dvh);
   --bubble-max-width: 85%;
   --size-send: 1.875rem;
@@ -148,6 +153,8 @@
     --shadow-call: 0 10px 28px rgb(0 0 0 / 0.45);
     --shadow-call-danger: 0 10px 28px rgb(0 0 0 / 0.45);
     --shadow-dock: 0 8px 30px rgb(0 0 0 / 0.45);
+    --shadow-drawer: 8px 0 32px rgb(0 0 0 / 0.55);
+    --color-backdrop: rgb(0 0 0 / 0.55);
     --mascot-shadow: rgb(0 0 0 / 0.55);
   }
 }

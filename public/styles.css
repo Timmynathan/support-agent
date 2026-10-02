@@ -740,12 +740,6 @@ body[data-in-call='true'] .topics {
   color: var(--color-on-accent);
 }
 
-/* Relay asked for an email or customer ID to be typed: the bar is where to look. */
-.chat-bar[data-requested] {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-accent);
-}
-
 .chat-divider {
   align-self: center;
   margin: var(--space-1) 0;
@@ -828,9 +822,308 @@ body[data-in-call='true'] .topics {
   overflow-wrap: anywhere;
 }
 
+/* ── Account panel ──────────────────────────────────────────────── */
+
+/* Narrow screens: a drawer that slides in from the left, over a dimmed page. Wide screens (below):
+   a fixed column beside Relay, always visible. */
+.account-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.account-toggle svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--drawer-width);
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-4) var(--space-6);
+  overflow-y: auto;
+  background: var(--color-bg);
+  border-right: var(--border-width) solid var(--color-border);
+  box-shadow: var(--shadow-drawer);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  transform: translateX(-105%);
+  /* Closed means gone: no shadow at the screen's edge, and no fields reachable by Tab. The
+     visibility change waits for the slide to finish. */
+  visibility: hidden;
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    visibility 0s linear var(--duration-base);
+}
+
+.sidebar[data-open='true'] {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--duration-base) var(--ease-out);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: var(--color-backdrop);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sidebar-close {
+  width: var(--size-send);
+  height: var(--size-send);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.sidebar-close svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+@media (min-width: 60rem) {
+  body {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    grid-template-areas:
+      'side top'
+      'side stage'
+      'side dock';
+  }
+  .topbar { grid-area: top; }
+  .stage { grid-area: stage; }
+  .dock { grid-area: dock; }
+  .sidebar {
+    grid-area: side;
+    position: static;
+    width: auto;
+    transform: none;
+    visibility: visible;
+    box-shadow: none;
+    transition: none;
+  }
+  .account-toggle,
+  .sidebar-close,
+  .sidebar-backdrop {
+    display: none;
+  }
+}
+
+.card {
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  transition: border-color var(--duration-base) ease, box-shadow var(--duration-base) ease;
+}
+
+/* Relay just asked for this form: it is where to look next. */
+.card[data-attention] {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+.card-quiet {
+  background: transparent;
+}
+
+.card-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.card-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.field-optional {
+  color: var(--color-text-subtle);
+  font-weight: normal;
+}
+
+.field input {
+  height: var(--field-height);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.field input::placeholder {
+  color: var(--color-text-subtle);
+}
+
+.field input:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--border-width);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.field input:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-2xs);
+}
+
+/* The words say what happened; the colour only supports them. */
+.form-message {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--font-size-xs);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.form-message[data-tone='error'] {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.form-message[data-tone='success'] {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.form-button {
+  height: var(--field-height);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: transform var(--duration-press) var(--ease-out), background-color var(--duration-fast) ease;
+}
+
+.form-button:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+.form-button:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .form-button:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .sidebar-close:hover {
+    background: var(--color-surface-muted);
+  }
+}
+
+.verified {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.verified-badge {
+  flex: none;
+  width: var(--size-send);
+  height: var(--size-send);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.verified-badge svg {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+}
+
+.verified-name {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.help-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
 /* ── Reduced motion: fewer and gentler, not none. Keep opacity, drop movement. ── */
 
 @media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
   .enter {
     transform: none;
     animation: fade var(--duration-enter) ease forwards;

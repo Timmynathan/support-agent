@@ -9,17 +9,15 @@ export const END_CALL_PHRASE = 'goodbye for now';
 export const CLOSING_LINES = {
   anythingElse: 'Is there anything else I can help you with?',
   goodbye: 'Thanks for calling RelayPay support. Goodbye for now.',
-  // Emails and customer IDs are typed, not spoken: speech-to-text garbles both.
-  type_email: 'Please type your email in the chat box below.',
-  type_customer_id: 'Please type your customer ID in the chat box below.',
+  // Personal details are typed into forms on screen, not spoken: speech-to-text garbles them,
+  // and nobody nearby hears them. The page opens the matching form when it sees these words.
   type_verification: 'Please fill in your customer ID, full name and email in the verification form on screen.',
+  type_callback: 'Please fill in your name, email and a good time to call in the callback form on screen.',
   // An escalation nobody can call back on is not finished, so the caller is asked until it is.
-  contact_name_email: 'Before we finish, our specialist needs a way to reach you. Could you tell me your name? And please type your email in the chat box below.',
-  contact_email: 'Before we finish, our specialist needs a way to reach you. Please type your email in the chat box below.',
-  contact_name: 'Before we finish, our specialist needs a name to ask for. Could you tell me your name?',
+  contact: 'Before we finish, our specialist needs a way to reach you. Please fill in the callback form on screen.',
 } as const;
 
-export const ASK_TO_TYPE = ['none', 'email', 'customer_id', 'verification'] as const;
+export const ASK_TO_TYPE = ['none', 'callback', 'verification'] as const;
 export type AskToType = (typeof ASK_TO_TYPE)[number];
 
 export interface ClosingInput {
@@ -45,8 +43,8 @@ export interface Closing {
 }
 
 const ENDS_WITH_QUESTION = /\?\s*$/;
-const ASKS_TO_TYPE = /\btype your\b|\bverification form\b/i;
-const ASKS_NAME = /\byour name\b/i;
+const ASKS_TO_TYPE = /\b(verification|callback) form\b/i;
+const ASKS_FOR_CALLBACK_FORM = /\bcallback form\b/i;
 // An offer phrased without a question mark: "I can raise this with the team if you'd like."
 const OFFER = /\b(if you'?d like|if you would like|if you want|would you like|do you want|want me to|shall i|should i|let me know)\b/i;
 
@@ -67,11 +65,9 @@ export function closingLine(input: ClosingInput): Closing | null {
   if (input.missingContact.length > 0) {
     // A held goodbye replaces the model's farewell, so only words that will be heard count.
     const heard = input.endCall ? '' : input.text;
-    const needName = input.missingContact.includes('name') && !ASKS_NAME.test(heard);
-    const needEmail = input.missingContact.includes('email') && !ASKS_TO_TYPE.test(heard);
-    if (!needName && !needEmail) return { line: null, note: 'contact_already_requested' };
-    const key = needName && needEmail ? 'contact_name_email' : needEmail ? 'contact_email' : 'contact_name';
-    return { line: CLOSING_LINES[key], note: input.endCall ? 'goodbye_held_for_contact' : 'contact_requested' };
+    // One form takes name, email and time together, so any missing detail is one request.
+    if (ASKS_FOR_CALLBACK_FORM.test(heard)) return { line: null, note: 'contact_already_requested' };
+    return { line: CLOSING_LINES.contact, note: input.endCall ? 'goodbye_held_for_contact' : 'contact_requested' };
   }
   if (input.endCall && input.answerType === 'social') {
     return { line: CLOSING_LINES.goodbye, note: 'call_ended_by_agent' };

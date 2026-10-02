@@ -91,6 +91,20 @@ async function main(): Promise<void> {
   // Vapi speaks its greeting while the agent warms up; a real caller starts talking after it.
   await new Promise((resolve) => setTimeout(resolve, 6000));
 
+  // The caller verifies with the secure form, as the page does: one wrong attempt, then right.
+  const verify = async (email: string) => {
+    const response = await fetch(`${BASE}/vapi/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ call_id: callId, customer_id: 'CUS-1001', full_name: 'Amara Okafor', email }),
+    });
+    return (await response.json()) as { verified: boolean; attempts_left?: number; message?: string };
+  };
+  const wrong = await verify('amara@wrong.example');
+  expect('verification form refuses a wrong email without saying which detail', wrong.verified === false && wrong.attempts_left === 2 && !/email/i.test(wrong.message ?? ''), JSON.stringify(wrong));
+  const right = await verify('amara@lagosledger.example');
+  expect('verification form verifies the right details', right.verified === true, JSON.stringify(right));
+
   const turns: Array<[string, { abortAfterFirstChunk?: boolean }]> = [
     ['What fees does RelayPay charge for international payments?', {}],
     ['Can you check transaction t x n nine zero zero one?', {}],

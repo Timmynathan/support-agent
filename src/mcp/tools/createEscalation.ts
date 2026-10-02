@@ -123,7 +123,7 @@ function contactStatus(row: { user_name: string | null; user_email: string | nul
     missing_contact: missing,
     message_for_agent:
       `This escalation has no ${missing.join(' or ')} yet, so nobody can call back. Ask for ${missing.length === 2 ? 'them' : 'it'}` +
-      (missing.includes('email') ? ' (set ask_to_type to email for the email)' : '') +
+      ' (set ask_to_type to callback: the caller fills in the callback form on screen)' +
       `, then call ${agentToolName('create_escalation')} again with what the caller gives.`,
   };
 }

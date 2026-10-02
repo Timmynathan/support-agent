@@ -28,6 +28,27 @@ const el = {
   chatInput: document.getElementById('chat-input'),
   chatSend: document.getElementById('chat-send'),
   chips: [...document.querySelectorAll('.chip')],
+  accountToggle: document.getElementById('account-toggle'),
+  sidebar: document.getElementById('sidebar'),
+  sidebarClose: document.getElementById('sidebar-close'),
+  sidebarBackdrop: document.getElementById('sidebar-backdrop'),
+  verifyCard: document.getElementById('verify-card'),
+  verifyForm: document.getElementById('verify-form'),
+  verifyCustomerId: document.getElementById('verify-customer-id'),
+  verifyName: document.getElementById('verify-name'),
+  verifyEmail: document.getElementById('verify-email'),
+  verifyMessage: document.getElementById('verify-message'),
+  verifySubmit: document.getElementById('verify-submit'),
+  verified: document.getElementById('verified'),
+  verifiedName: document.getElementById('verified-name'),
+  verifiedCompany: document.getElementById('verified-company'),
+  callbackCard: document.getElementById('callback-card'),
+  callbackForm: document.getElementById('callback-form'),
+  callbackName: document.getElementById('callback-name'),
+  callbackEmail: document.getElementById('callback-email'),
+  callbackTime: document.getElementById('callback-time'),
+  callbackMessage: document.getElementById('callback-message'),
+  callbackSubmit: document.getElementById('callback-submit'),
 };
 
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
@@ -81,6 +102,13 @@ let greetingDone = false;
 let greetingFallback = null;
 let face = null;
 let doneHold = null;
+// The live call's Vapi id: the verification form verifies this call and no other.
+let callId = null;
+// Who the caller verified as, for this call only.
+let verifiedCustomer = null;
+// Details typed before the call connected, sent as soon as it does.
+let pendingVerification = null;
+let verifying = false;
 let doneMutedMic = false;
 const level = { mic: 0, agent: 0 };
 
@@ -231,8 +259,8 @@ function onTranscript(message) {
     const said = [chat.relayBubble.dataset.said, message.transcript].filter(Boolean).join(' ');
     chat.relayBubble.dataset.said = said;
     renderRelayText(chat.relayBubble, said);
-    const wanted = TYPE_REQUEST.exec(said);
-    if (wanted) requestTyping(wanted[1].toLowerCase() === 'email' ? 'email' : 'customer_id');
+    if (/verification form/i.test(said) && !verifiedCustomer) promptForm(el.verifyCard);
+    if (/callback form/i.test(said)) promptForm(el.callbackCard);
   }
 }
 
@@ -247,7 +275,6 @@ const DIGIT_WORDS = { zero: '0', oh: '0', o: '0', one: '1', two: '2', three: '3'
 const SPACED_PREFIX = Object.keys(REFERENCE_DIGITS).map((prefix) => prefix.split('').join('[\\s.]+')).join('|');
 const REFERENCE_START = new RegExp(`\\b(${SPACED_PREFIX}|TXN|CUS|TKT|ESC|PAY(?=\\s*-))\\b(?:[\\s.]*(?:-|dash|hyphen|minus|negative)[\\s.]*|[\\s.]+)`, 'gi');
 const DISPLAY_DIGIT = /^[\s,-]*(\d+|zero|oh|o|one|two|three|four|five|six|seven|eight|nine)\b/i;
-const TYPE_REQUEST = /\btype your (email|customer id)\b/i;
 
 // Splits text into plain runs and references: [{ text }, { reference, text }, …].
 function findReferences(text) {
@@ -318,30 +345,180 @@ async function copyReference(chip, hint, reference) {
   }, COPIED_FOR_MS);
 }
 
-// ── Typing what shouldn't be spoken ────────────────────────────────
+// ── Account panel: verification and callback forms ─────────────────
 
-const DEFAULT_PLACEHOLDER = 'Type a question for Relay…';
-const TYPE_PROMPTS = {
-  email: { placeholder: 'Type your email here…', inputMode: 'email', autocomplete: 'email' },
-  customer_id: { placeholder: 'Type your customer ID here…', inputMode: 'text', autocomplete: 'off' },
-};
+const WIDE_SCREEN = window.matchMedia('(min-width: 60rem)');
+const CUSTOMER_ID = /^CUS[-\s]?\d{4}$/i;
+const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const VERIFY_RETRY_MS = 1000;
+const VERIFY_RETRIES = 6;
+const ATTENTION_MS = 4000;
 
-// Relay asked for an email or customer ID to be typed: point the caller at the chat box.
-function requestTyping(kind) {
-  if (el.chatForm.dataset.requested === kind) return;
-  const prompt = TYPE_PROMPTS[kind];
-  el.chatForm.dataset.requested = kind;
-  el.chatInput.placeholder = prompt.placeholder;
-  el.chatInput.inputMode = prompt.inputMode;
-  el.chatInput.autocomplete = prompt.autocomplete;
-  if (!el.chatInput.disabled) el.chatInput.focus();
+function setSidebarOpen(open) {
+  el.sidebar.dataset.open = String(open);
+  el.sidebarBackdrop.hidden = !open || WIDE_SCREEN.matches;
+  el.accountToggle.setAttribute('aria-expanded', String(open));
 }
 
-function clearTypingRequest() {
-  delete el.chatForm.dataset.requested;
-  el.chatInput.placeholder = DEFAULT_PLACEHOLDER;
-  el.chatInput.inputMode = 'text';
-  el.chatInput.autocomplete = 'off';
+// Relay asked for this form: open the panel (on narrow screens), mark the card and put the
+// cursor in its first empty field.
+function promptForm(card) {
+  card.hidden = false;
+  card.dataset.attention = '';
+  setTimeout(() => delete card.dataset.attention, ATTENTION_MS);
+  if (!WIDE_SCREEN.matches) setSidebarOpen(true);
+  const empty = [...card.querySelectorAll('input')].find((input) => !input.value && !input.disabled);
+  empty?.focus();
+}
+
+function showFormMessage(target, tone, text) {
+  target.textContent = text;
+  target.dataset.tone = tone;
+  target.hidden = !text;
+}
+
+// Checks the fields' shape before sending; each problem is marked on its own field.
+function readFields(fields) {
+  let firstBad = null;
+  for (const [input, valid] of fields) {
+    const ok = valid(input.value.trim());
+    input.setAttribute('aria-invalid', String(!ok));
+    if (!ok && !firstBad) firstBad = input;
+  }
+  firstBad?.focus();
+  return firstBad === null;
+}
+
+function readVerificationForm() {
+  const ok = readFields([
+    [el.verifyCustomerId, (v) => CUSTOMER_ID.test(v)],
+    [el.verifyName, (v) => v.length > 0],
+    [el.verifyEmail, (v) => EMAIL_ADDRESS.test(v)],
+  ]);
+  if (!ok) {
+    showFormMessage(el.verifyMessage, 'error', 'Please check the highlighted fields. Your customer ID looks like CUS-1001.');
+    return null;
+  }
+  return { customer_id: el.verifyCustomerId.value.trim(), full_name: el.verifyName.value.trim(), email: el.verifyEmail.value.trim() };
+}
+
+function setVerifying(busy) {
+  verifying = busy;
+  el.verifySubmit.disabled = busy;
+  el.verifySubmit.textContent = busy ? 'Verifying…' : 'Verify';
+}
+
+async function onVerifySubmit(event) {
+  event.preventDefault();
+  if (verifying) return;
+  const form = readVerificationForm();
+  if (!form) return;
+  if (callId && LIVE_STATES.has(state)) {
+    await submitVerification(form);
+    return;
+  }
+  // Verification belongs to a call: start one, and send the details once it connects.
+  pendingVerification = form;
+  showFormMessage(el.verifyMessage, 'info', 'Starting a call to verify you…');
+  if (!STATES[state].inCall) await startCall();
+}
+
+function flushPendingVerification() {
+  if (!pendingVerification || !callId || !LIVE_STATES.has(state)) return;
+  const form = pendingVerification;
+  pendingVerification = null;
+  void submitVerification(form);
+}
+
+async function submitVerification(form) {
+  setVerifying(true);
+  showFormMessage(el.verifyMessage, 'info', 'Checking your details…');
+  try {
+    let response;
+    // The server learns about a new call a moment after the browser does; wait briefly for it.
+    for (let attempt = 0; attempt < VERIFY_RETRIES; attempt++) {
+      response = await fetch('/vapi/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ call_id: callId, ...form }),
+      });
+      if (response.status !== 404) break;
+      await new Promise((resolve) => setTimeout(resolve, VERIFY_RETRY_MS));
+    }
+    const body = await response.json().catch(() => ({}));
+    if (body.verified) {
+      onVerified(body);
+      return;
+    }
+    if (response.status === 404) {
+      showFormMessage(el.verifyMessage, 'error', "Your call hasn't fully connected yet. Please try again in a moment.");
+      return;
+    }
+    const left = typeof body.attempts_left === 'number' && body.reason === 'mismatch' ? ` ${body.attempts_left} ${body.attempts_left === 1 ? 'attempt' : 'attempts'} left.` : '';
+    showFormMessage(el.verifyMessage, 'error', `${body.message ?? "We couldn't check your details."}${left}`);
+    if (body.reason === 'too_many_attempts' || body.attempts_left === 0) lockVerificationForm(true);
+  } catch {
+    showFormMessage(el.verifyMessage, 'error', "We couldn't reach RelayPay. Check your connection and try again.");
+  } finally {
+    setVerifying(false);
+  }
+}
+
+function lockVerificationForm(locked) {
+  for (const input of [el.verifyCustomerId, el.verifyName, el.verifyEmail]) input.disabled = locked;
+  el.verifySubmit.hidden = locked;
+}
+
+function onVerified(customer) {
+  verifiedCustomer = customer;
+  el.verifiedName.textContent = customer.contact_name;
+  el.verifiedCompany.textContent = customer.company_name;
+  el.verifyForm.hidden = true;
+  el.verified.hidden = false;
+  el.verifyForm.reset();
+  addDivider(`Verified as ${customer.contact_name}, ${customer.company_name}`);
+  // Tell Relay, so it carries on with what the caller asked.
+  vapi.send({ type: 'add-message', message: { role: 'user', content: "I've filled in the verification form." }, triggerResponseEnabled: true });
+  chat.awaitingReply = true;
+  if (state === 'listening') setState('thinking');
+  if (!WIDE_SCREEN.matches) setTimeout(() => setSidebarOpen(false), ATTENTION_MS / 2);
+}
+
+// Verification lasts for one call; the next call starts unverified, with nothing left on screen.
+function resetAccountPanel() {
+  callId = null;
+  verifiedCustomer = null;
+  pendingVerification = null;
+  el.verifyForm.reset();
+  el.verifyForm.hidden = false;
+  el.verified.hidden = true;
+  lockVerificationForm(false);
+  showFormMessage(el.verifyMessage, 'info', '');
+  for (const input of el.verifyForm.querySelectorAll('input')) input.removeAttribute('aria-invalid');
+  el.callbackForm.reset();
+  el.callbackCard.hidden = true;
+  showFormMessage(el.callbackMessage, 'info', '');
+  el.callbackSubmit.disabled = false;
+}
+
+function onCallbackSubmit(event) {
+  event.preventDefault();
+  const ok = readFields([
+    [el.callbackName, (v) => v.length > 0],
+    [el.callbackEmail, (v) => EMAIL_ADDRESS.test(v)],
+  ]);
+  if (!ok) {
+    showFormMessage(el.callbackMessage, 'error', 'Please add your name and a valid email.');
+    return;
+  }
+  if (!LIVE_STATES.has(state)) {
+    showFormMessage(el.callbackMessage, 'error', 'Start a call first, then send your details.');
+    return;
+  }
+  const time = el.callbackTime.value.trim();
+  askTyped(`My callback details are: name ${el.callbackName.value.trim()}, email ${el.callbackEmail.value.trim()}${time ? `, best time ${time}` : ''}.`);
+  showFormMessage(el.callbackMessage, 'success', 'Sent to Relay.');
+  el.callbackSubmit.disabled = true;
 }
 
 // ── Face and timer ─────────────────────────────────────────────────
@@ -393,7 +570,7 @@ function stopCallEffects() {
   el.muteButton.setAttribute('aria-pressed', 'false');
   el.muteLabel.textContent = 'Mute';
   releaseDoneHold();
-  clearTypingRequest();
+  resetAccountPanel();
 }
 
 // ── Done speaking ──────────────────────────────────────────────────
@@ -432,7 +609,6 @@ function askTyped(question) {
   chat.callerBubble = null;
   chat.relayBubble = null;
   chat.awaitingReply = true;
-  clearTypingRequest();
   vapi.send({ type: 'add-message', message: { role: 'user', content: question }, triggerResponseEnabled: true });
   if (state === 'listening') setState('thinking');
 }
@@ -458,6 +634,7 @@ async function onAsk(question) {
 function attachEvents() {
   vapi.on('call-start', () => {
     setState('listening');
+    flushPendingVerification();
     startCallEffects();
     addDivider('Conversation started');
     greetingDone = false;
@@ -545,7 +722,9 @@ async function startCall() {
     el.micHint.hidden = false;
   }, SLOW_CONNECT_MS);
   try {
-    await vapi.start(assistantId);
+    const call = await vapi.start(assistantId);
+    callId = call?.id ?? null;
+    flushPendingVerification();
   } catch (error) {
     pendingQuestion = null;
     setState('error');
@@ -604,6 +783,17 @@ void loadFace();
 el.callButton.addEventListener('click', () => void onCallButton());
 el.muteButton.addEventListener('click', onMute);
 el.doneButton.addEventListener('click', onDone);
+el.verifyForm.addEventListener('submit', (event) => void onVerifySubmit(event));
+el.callbackForm.addEventListener('submit', onCallbackSubmit);
+el.accountToggle.addEventListener('click', () => setSidebarOpen(el.sidebar.dataset.open !== 'true'));
+el.sidebarClose.addEventListener('click', () => setSidebarOpen(false));
+el.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && el.sidebar.dataset.open === 'true' && !WIDE_SCREEN.matches) setSidebarOpen(false);
+});
+for (const input of [...el.verifyForm.querySelectorAll('input'), ...el.callbackForm.querySelectorAll('input')]) {
+  input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+}
 for (const chip of el.chips) chip.addEventListener('click', () => void onAsk(chip.dataset.question));
 // Hiding the thread keeps the bar; the log keeps filling, ready when it is shown again.
 el.threadToggle.addEventListener('click', () => {
