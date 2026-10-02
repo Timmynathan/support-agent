@@ -36,7 +36,6 @@ const el = {
   verifyIntro: document.getElementById('verify-intro'),
   verifyForm: document.getElementById('verify-form'),
   verifyCustomerId: document.getElementById('verify-customer-id'),
-  verifyName: document.getElementById('verify-name'),
   verifyEmail: document.getElementById('verify-email'),
   verifyMessage: document.getElementById('verify-message'),
   verifySubmit: document.getElementById('verify-submit'),
@@ -409,14 +408,13 @@ function readFields(fields) {
 function readVerificationForm() {
   const ok = readFields([
     [el.verifyCustomerId, (v) => CUSTOMER_ID.test(v)],
-    [el.verifyName, (v) => v.length > 0],
     [el.verifyEmail, (v) => EMAIL_ADDRESS.test(v)],
   ]);
   if (!ok) {
     showFormMessage(el.verifyMessage, 'error', 'Please check the highlighted fields. Your customer ID looks like CUS-1001.');
     return null;
   }
-  return { customer_id: el.verifyCustomerId.value.trim(), full_name: el.verifyName.value.trim(), email: el.verifyEmail.value.trim() };
+  return { customer_id: el.verifyCustomerId.value.trim(), email: el.verifyEmail.value.trim() };
 }
 
 function setVerifying(busy) {
@@ -482,7 +480,7 @@ async function submitVerification(form) {
 }
 
 function lockVerificationForm(locked) {
-  for (const input of [el.verifyCustomerId, el.verifyName, el.verifyEmail]) input.disabled = locked;
+  for (const input of [el.verifyCustomerId, el.verifyEmail]) input.disabled = locked;
   el.verifySubmit.hidden = locked;
 }
 

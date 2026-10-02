@@ -8,7 +8,7 @@ import { getConversation } from './registry.js';
 // channel (/chat/verify). Only a conversation that is live on this server can be verified, so
 // nobody can verify (or probe accounts against) a conversation id they made up.
 
-const FIELD_LIMITS: Record<keyof VerificationForm, number> = { customer_id: 20, full_name: 120, email: 254 };
+const FIELD_LIMITS: Record<keyof VerificationForm, number> = { customer_id: 20, email: 254 };
 
 export function readVerificationForm(body: Record<string, unknown>): VerificationForm {
   const form = {} as VerificationForm;

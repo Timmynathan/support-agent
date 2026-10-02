@@ -28,7 +28,7 @@ function assistantConfig(publicUrl: string, webhookCredentialId: string) {
     name: 'RelayPay Support Voice',
     // The page opens the verification form when Relay says "verification form".
     firstMessage:
-      "Hello, you've reached RelayPay support. To help with your account, please fill in your customer ID, full name and email in the verification form on screen. If you just have a general question, go ahead and ask.",
+      "Hello, you've reached RelayPay support. To help with your account, please fill in your customer ID and email in the verification form on screen. If you just have a general question, go ahead and ask.",
     firstMessageMode: 'assistant-speaks-first',
     model: {
       provider: 'custom-llm',

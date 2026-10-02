@@ -9,7 +9,7 @@ export function verificationRequired(): ToolOutcome {
   return refused(
     'verification_required',
     'The caller is not verified, so no account, transaction or payout details can be shared. Ask them to fill in ' +
-      'their customer ID, full name and email in the verification form on screen (set ask_to_type to verification). ' +
+      'their customer ID and email in the verification form on screen (set ask_to_type to verification). ' +
       'Do not ask for these details aloud, and do not say whether the reference exists.',
   );
 }

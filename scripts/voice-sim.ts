@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     const response = await fetch(`${BASE}/vapi/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ call_id: callId, customer_id: 'CUS-1001', full_name: 'Amara Okafor', email }),
+      body: JSON.stringify({ call_id: callId, customer_id: 'CUS-1001', email }),
     });
     return (await response.json()) as { verified: boolean; attempts_left?: number; message?: string };
   };

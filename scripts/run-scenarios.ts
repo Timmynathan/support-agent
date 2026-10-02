@@ -20,7 +20,7 @@ type Rows = Awaited<ReturnType<typeof rowsFor>>;
 // A step in a scenario: something the caller says, or the caller filling in the secure
 // verification form (POST /chat/verify), exactly as the page's form does.
 interface VerifyStep {
-  verify: { customer_id: string; full_name: string; email: string };
+  verify: { customer_id: string; email: string };
 }
 type Step = string | VerifyStep;
 
@@ -36,9 +36,9 @@ interface Scenario {
   check(replies: any[], rows: Rows, verifications: any[]): string[];
 }
 
-const AMARA = { customer_id: 'CUS-1001', full_name: 'Amara Okafor', email: 'amara@lagosledger.example' };
-const EFUA = { customer_id: 'CUS-1003', full_name: 'Efua Mensah', email: 'efua@accrastack.example' };
-const PATRICK = { customer_id: 'CUS-1005', full_name: 'Patrick Ndayisaba', email: 'patrick@kigaliworks.example' };
+const AMARA = { customer_id: 'CUS-1001', email: 'amara@lagosledger.example' };
+const EFUA = { customer_id: 'CUS-1003', email: 'efua@accrastack.example' };
+const PATRICK = { customer_id: 'CUS-1005', email: 'patrick@kigaliworks.example' };
 const VERIFIED_LINE = "I've filled in the verification form.";
 // The text channel has no closing lines (voice only), so the model's own wording is checked here.
 const asksToVerify = (reply: any) => /verif/i.test(reply.reply) && /form/i.test(reply.reply);
@@ -143,7 +143,7 @@ export const SCENARIOS: Scenario[] = [
     turns: [
       'Can you check my account?',
       { verify: { ...AMARA, email: 'amara@wrong.example' } },
-      { verify: { ...AMARA, full_name: 'Amara Smith' } },
+      { verify: { ...AMARA, email: 'daniel@nairobiops.example' } },
       { verify: { ...AMARA, customer_id: 'CUS-1002' } },
       { verify: AMARA },
     ],

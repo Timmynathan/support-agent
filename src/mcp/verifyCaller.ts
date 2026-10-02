@@ -9,7 +9,6 @@ import { lookupCustomer } from './tools/lookupCustomer.js';
 // code calls this; the agent cannot reach it.
 export interface VerificationForm {
   customer_id: string;
-  full_name: string;
   email: string;
 }
 
@@ -19,7 +18,7 @@ export type VerificationResult =
 
 export async function verifyCaller(conversationId: string, channel: Channel, form: VerificationForm): Promise<VerificationResult> {
   const ctx: ToolContext = { conversationId, channel, source: 'caller_page' };
-  const input = { customer_id: form.customer_id, contact_name: form.full_name, email: form.email };
+  const input = { customer_id: form.customer_id, email: form.email };
   const outcome = await runLogged(ctx, lookupCustomer, input, () => lookupCustomer.run(ctx, input));
   const result = outcome.result as Record<string, any>;
 

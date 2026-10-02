@@ -5,8 +5,8 @@ import type { ToolContext } from '../context.js';
 import { defineTool, refused, type ToolOutcome } from '../tool.js';
 import { bindVerifiedCustomer, verifiedCustomerId } from '../verification.js';
 
-// A caller proves who they are only by typing all three into the secure form: something the
-// account has (its ID), its contact's full name, and its email. Saying a name and a company
+// A caller proves who they are only by typing both into the secure form: the account's
+// customer ID and its email, which must belong to the same account. Saying a name and a company
 // is not enough: both are easy to find. The agent itself can never verify anyone.
 export const MAX_VERIFICATION_ATTEMPTS = 3;
 
@@ -28,7 +28,6 @@ const COLUMNS = 'customer_id, company_name, contact_name, contact_email, plan, a
 
 const input = z.object({
   customer_id: z.string().trim().min(1).max(20).optional(),
-  contact_name: z.string().trim().min(1).max(120).optional(),
   email: z.string().trim().min(3).max(254).optional(),
 });
 type Input = z.infer<typeof input>;
@@ -38,7 +37,7 @@ export const lookupCustomer = defineTool({
   purpose: 'Verify a caller from the secure form, or return the verified caller’s own account summary',
   description:
     'Returns the account summary of the caller verified in this conversation (call it with no input). It cannot verify ' +
-    'anyone: callers verify themselves by typing their customer ID, full name and email into the secure form on screen. ' +
+    'anyone: callers verify themselves by typing their customer ID and email into the secure form on screen. ' +
     'If the caller is not verified it refuses; then ask them to fill in that form. Never ask for those details aloud.',
   input,
   async handler(ctx, args) {
@@ -70,7 +69,7 @@ async function verifiedAccountSummary(ctx: ToolContext): Promise<ToolOutcome> {
   if (!verified) {
     return refused(
       'verification_required',
-      'The caller is not verified. Ask them to fill in their customer ID, full name and email in the verification form ' +
+      'The caller is not verified. Ask them to fill in their customer ID and email in the verification form ' +
         'on screen (set ask_to_type to verification). Do not ask for these details aloud and do not share account details.',
     );
   }
@@ -91,7 +90,7 @@ async function failedAttempts(ctx: ToolContext): Promise<number> {
 }
 
 async function verifyFromForm(ctx: ToolContext, args: Input): Promise<ToolOutcome> {
-  const missing = (['customer_id', 'contact_name', 'email'] as const).filter((key) => !args[key]);
+  const missing = (['customer_id', 'email'] as const).filter((key) => !args[key]);
   if (missing.length > 0) return refused('missing_fields', `Fill in every field: ${missing.join(', ')}.`, { missing });
 
   const used = await failedAttempts(ctx);
@@ -103,12 +102,11 @@ async function verifyFromForm(ctx: ToolContext, args: Input): Promise<ToolOutcom
   const [row] = customerId
     ? (must(await db().from('customers').select(COLUMNS).eq('customer_id', customerId).limit(1)) as CustomerRow[])
     : [];
-  const matches =
-    !!row && row.email_key === args.email!.trim().toLowerCase() && normalizeName(row.contact_name) === normalizeName(args.contact_name!);
+  const matches = !!row && row.email_key === args.email!.trim().toLowerCase();
 
   if (!matches) {
     // Which detail failed is logged for support staff, never returned to the caller.
-    const mismatched = !row ? ['customer_id'] : [row.email_key !== args.email!.trim().toLowerCase() && 'email', normalizeName(row.contact_name) !== normalizeName(args.contact_name!) && 'contact_name'].filter(Boolean);
+    const mismatched = !row ? ['customer_id'] : ['email'];
     const attemptsLeft = MAX_VERIFICATION_ATTEMPTS - used - 1;
     return {
       status: 'not_found',
@@ -127,8 +125,4 @@ async function verifyFromForm(ctx: ToolContext, args: Input): Promise<ToolOutcom
     result: { ok: true, found: true, verified: true, customer_id: row.customer_id, company_name: row.company_name, contact_name: row.contact_name },
     logSummary: { found: true, verified: true, customer_id: row.customer_id, verification: bind, source: 'caller_page' },
   };
-}
-
-function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, ' ').trim();
 }

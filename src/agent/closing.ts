@@ -11,7 +11,7 @@ export const CLOSING_LINES = {
   goodbye: 'Thanks for calling RelayPay support. Goodbye for now.',
   // Personal details are typed into forms on screen, not spoken: speech-to-text garbles them,
   // and nobody nearby hears them. The page opens the matching form when it sees these words.
-  type_verification: 'Please fill in your customer ID, full name and email in the verification form on screen.',
+  type_verification: 'Please fill in your customer ID and email in the verification form on screen.',
   type_callback: 'Please fill in your name, email and a good time to call in the callback form on screen.',
   // An escalation nobody can call back on is not finished, so the caller is asked until it is.
   contact: 'Before we finish, our specialist needs a way to reach you. Please fill in the callback form on screen.',
