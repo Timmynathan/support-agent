@@ -56,7 +56,7 @@
 
       <section class="card" id="verify-card" aria-labelledby="verify-title">
         <h3 class="card-title" id="verify-title">Verify your account</h3>
-        <p class="card-note">Relay needs this before it can look up your account, transactions or payouts. Typed here, never said aloud.</p>
+        <p class="card-note" id="verify-intro">Relay needs this before it can look up your account, transactions or payouts. Typed here, never said aloud.</p>
         <form class="fields" id="verify-form" novalidate>
           <div class="field">
             <label for="verify-customer-id">Customer ID</label>
@@ -103,6 +103,37 @@
           <button type="submit" class="form-button" id="callback-submit">Send details</button>
         </form>
       </section>
+
+      <!-- Shown once verified. Every list has a loading, empty, error and loaded state. -->
+      <div class="account-sections" id="account-sections" hidden>
+        <div class="account-status" id="account-status" hidden>
+          <p class="form-message" id="account-message" role="status" aria-live="polite"></p>
+          <button type="button" class="text-button" id="account-retry" hidden>Try again</button>
+        </div>
+
+        <section class="card" id="account-card" aria-labelledby="account-title" hidden>
+          <h3 class="card-title" id="account-title">Account</h3>
+          <dl class="facts" id="account-facts"></dl>
+        </section>
+
+        <section class="card" id="requests-card" aria-labelledby="requests-title" hidden>
+          <h3 class="card-title" id="requests-title">Your requests</h3>
+          <p class="card-note" id="requests-empty" hidden>No tickets or callbacks yet.</p>
+          <ul class="rows" id="requests-list"></ul>
+        </section>
+
+        <section class="card" id="payments-card" aria-labelledby="payments-title" hidden>
+          <h3 class="card-title" id="payments-title">Recent payments</h3>
+          <p class="card-note" id="payments-empty" hidden>No transactions or payouts yet.</p>
+          <ul class="rows" id="payments-list"></ul>
+        </section>
+
+        <section class="card" id="history-card" aria-labelledby="history-title" hidden>
+          <h3 class="card-title" id="history-title">Past conversations</h3>
+          <p class="card-note" id="history-empty" hidden>No conversations yet.</p>
+          <ul class="rows" id="history-list"></ul>
+        </section>
+      </div>
 
       <section class="card card-quiet" aria-labelledby="help-title">
         <h3 class="card-title" id="help-title">Relay can help with</h3>

@@ -33,6 +33,7 @@ const el = {
   sidebarClose: document.getElementById('sidebar-close'),
   sidebarBackdrop: document.getElementById('sidebar-backdrop'),
   verifyCard: document.getElementById('verify-card'),
+  verifyIntro: document.getElementById('verify-intro'),
   verifyForm: document.getElementById('verify-form'),
   verifyCustomerId: document.getElementById('verify-customer-id'),
   verifyName: document.getElementById('verify-name'),
@@ -49,6 +50,21 @@ const el = {
   callbackTime: document.getElementById('callback-time'),
   callbackMessage: document.getElementById('callback-message'),
   callbackSubmit: document.getElementById('callback-submit'),
+  accountSections: document.getElementById('account-sections'),
+  accountStatus: document.getElementById('account-status'),
+  accountMessage: document.getElementById('account-message'),
+  accountRetry: document.getElementById('account-retry'),
+  accountCard: document.getElementById('account-card'),
+  accountFacts: document.getElementById('account-facts'),
+  requestsCard: document.getElementById('requests-card'),
+  requestsEmpty: document.getElementById('requests-empty'),
+  requestsList: document.getElementById('requests-list'),
+  paymentsCard: document.getElementById('payments-card'),
+  paymentsEmpty: document.getElementById('payments-empty'),
+  paymentsList: document.getElementById('payments-list'),
+  historyCard: document.getElementById('history-card'),
+  historyEmpty: document.getElementById('history-empty'),
+  historyList: document.getElementById('history-list'),
 };
 
 // Every state has its own words; "unavailable", "ended" and "error" never look the same.
@@ -261,6 +277,7 @@ function onTranscript(message) {
     renderRelayText(chat.relayBubble, said);
     if (/verification form/i.test(said) && !verifiedCustomer) promptForm(el.verifyCard);
     if (/callback form/i.test(said)) promptForm(el.callbackCard);
+    if (verifiedCustomer && findReferences(said).some((part) => /^(TKT|ESC)-/.test(part.reference ?? ''))) scheduleAccountRefresh();
   }
 }
 
@@ -474,9 +491,11 @@ function onVerified(customer) {
   el.verifiedName.textContent = customer.contact_name;
   el.verifiedCompany.textContent = customer.company_name;
   el.verifyForm.hidden = true;
+  el.verifyIntro.hidden = true;
   el.verified.hidden = false;
   el.verifyForm.reset();
   addDivider(`Verified as ${customer.contact_name}, ${customer.company_name}`);
+  void loadAccount();
   // Tell Relay, so it carries on with what the caller asked.
   vapi.send({ type: 'add-message', message: { role: 'user', content: "I've filled in the verification form." }, triggerResponseEnabled: true });
   chat.awaitingReply = true;
@@ -491,14 +510,196 @@ function resetAccountPanel() {
   pendingVerification = null;
   el.verifyForm.reset();
   el.verifyForm.hidden = false;
+  el.verifyIntro.hidden = false;
   el.verified.hidden = true;
   lockVerificationForm(false);
   showFormMessage(el.verifyMessage, 'info', '');
   for (const input of el.verifyForm.querySelectorAll('input')) input.removeAttribute('aria-invalid');
+  clearAccount();
   el.callbackForm.reset();
   el.callbackCard.hidden = true;
   showFormMessage(el.callbackMessage, 'info', '');
   el.callbackSubmit.disabled = false;
+}
+
+// ── The verified caller's own records ──────────────────────────────
+
+const ACCOUNT_REFRESH_DELAY_MS = 1500;
+let accountRefresh = null;
+
+const STATUS_WORDS = {
+  open: ['Open', 'attention'],
+  'in progress': ['In progress', 'attention'],
+  closed: ['Closed', 'done'],
+  processing: ['Processing', 'attention'],
+  completed: ['Completed', 'done'],
+  delayed: ['Delayed', 'problem'],
+  failed: ['Failed', 'problem'],
+  'review required': ['Under review', 'problem'],
+  scheduled: ['Scheduled', 'attention'],
+};
+const OUTCOME_WORDS = {
+  resolved: 'Resolved',
+  escalated: 'Passed to a specialist',
+  declined: "Relay couldn't answer",
+  abandoned: 'Ended early',
+  failed: "Didn't complete",
+  in_progress: 'In progress',
+};
+
+function node(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function statusPill(status) {
+  const [word, tone] = STATUS_WORDS[status] ?? [status, ''];
+  const pill = node('span', 'status-pill', word);
+  if (tone) pill.dataset.tone = tone;
+  return pill;
+}
+
+// Dates without a time ("2026-08-16") are calendar days, not midnight UTC.
+function formatDay(value) {
+  if (!value) return null;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+
+function formatMoney(amount, currency) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(Number(amount));
+  } catch {
+    return `${amount} ${currency}`;
+  }
+}
+
+function sentenceCase(text) {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+function showAccountStatus(tone, text, canRetry) {
+  el.accountStatus.hidden = !text;
+  showFormMessage(el.accountMessage, tone, text);
+  el.accountRetry.hidden = !canRetry;
+}
+
+function fillList(list, empty, rows) {
+  list.replaceChildren(...rows);
+  empty.hidden = rows.length > 0;
+}
+
+function renderAccount(data) {
+  const facts = [
+    ['Company', data.account.company_name],
+    ['Name', data.account.contact_name],
+    ['Customer ID', data.customer_id],
+    ['Plan', data.account.plan],
+    ['Account', sentenceCase(data.account.account_status)],
+    ['Verification', sentenceCase(data.account.kyc_status)],
+  ];
+  el.accountFacts.replaceChildren(...facts.flatMap(([label, value]) => [node('dt', '', label), node('dd', '', value ?? '—')]));
+
+  const requests = [
+    ...data.escalations.map((e) => {
+      const row = node('li', 'row');
+      const head = node('div', 'row-head');
+      head.append(referenceChip(e.escalation_id), node('span', 'row-title', `${sentenceCase(e.category)} specialist callback`), statusPill(e.status));
+      const when = e.call_booked && e.preferred_time ? `Callback: ${e.preferred_time}` : 'Callback time not set yet';
+      row.append(head, node('p', 'row-meta', `${when} · opened ${formatDay(e.created_at)}`));
+      return row;
+    }),
+    ...data.tickets.map((t) => {
+      const row = node('li', 'row');
+      const head = node('div', 'row-head');
+      head.append(referenceChip(t.ticket_id), node('span', 'row-title', `${sentenceCase(t.category)} ticket`), statusPill(t.status));
+      row.append(head, node('p', 'row-detail', t.summary), node('p', 'row-meta', `Opened ${formatDay(t.created_at)}${t.transaction_id ? ` · about ${t.transaction_id}` : ''}`));
+      return row;
+    }),
+  ];
+  fillList(el.requestsList, el.requestsEmpty, requests);
+
+  const payments = [
+    ...data.transactions.map((t) => {
+      const row = node('li', 'row');
+      const head = node('div', 'row-head');
+      head.append(referenceChip(t.transaction_id), node('span', 'row-title', sentenceCase(t.transaction_type)), statusPill(t.status), node('span', 'row-amount', formatMoney(t.amount, t.currency)));
+      const arrival = t.estimated_arrival ? ` · expected ${formatDay(t.estimated_arrival)}` : t.status === 'completed' ? '' : ' · arrival date not known';
+      row.append(head, node('p', 'row-meta', `${formatDay(t.created_at)}${t.destination_country ? ` · to ${t.destination_country}` : ''}${arrival}`));
+      if (t.support_summary) row.append(node('p', 'row-detail', t.support_summary));
+      return row;
+    }),
+    ...data.payouts.map((p) => {
+      const row = node('li', 'row');
+      const head = node('div', 'row-head');
+      head.append(referenceChip(p.payout_id), node('span', 'row-title', `Payout to ${p.recipient_name}`), statusPill(p.status), node('span', 'row-amount', formatMoney(p.amount, p.currency)));
+      row.append(head, node('p', 'row-meta', p.scheduled_for ? `Scheduled ${formatDay(p.scheduled_for)}` : 'Not scheduled yet'));
+      if (p.failure_reason) row.append(node('p', 'row-detail', p.failure_reason));
+      return row;
+    }),
+  ];
+  fillList(el.paymentsList, el.paymentsEmpty, payments);
+
+  const history = data.conversations.map((c) => {
+    const row = node('li', 'row history');
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    const first = c.turns[0]?.user_transcript;
+    const when = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(c.started_at));
+    summary.append(
+      node('span', 'row-title', c.current ? `This call · ${when}` : when),
+      node('span', 'row-meta', `${OUTCOME_WORDS[c.final_status] ?? c.final_status} · ${c.turns.length} ${c.turns.length === 1 ? 'message' : 'messages'}${first ? ` · "${first.slice(0, 60)}${first.length > 60 ? '…' : ''}"` : ''}`),
+    );
+    const log = node('ol', 'mini-log');
+    for (const t of c.turns) {
+      const you = node('li');
+      you.append(node('b', '', 'You'), node('p', '', t.user_transcript));
+      log.append(you);
+      if (t.assistant_response) {
+        const relay = node('li');
+        relay.append(node('b', '', 'Relay'), node('p', '', t.assistant_response));
+        log.append(relay);
+      }
+    }
+    details.append(summary, log);
+    row.append(details);
+    return row;
+  });
+  fillList(el.historyList, el.historyEmpty, history);
+
+  for (const card of [el.accountCard, el.requestsCard, el.paymentsCard, el.historyCard]) card.hidden = false;
+}
+
+async function loadAccount() {
+  if (!verifiedCustomer || !callId) return;
+  el.accountSections.hidden = false;
+  const firstLoad = el.accountCard.hidden;
+  if (firstLoad) showAccountStatus('info', 'Loading your account…', false);
+  try {
+    const response = await fetch('/vapi/account', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ call_id: callId }) });
+    if (!verifiedCustomer) return;
+    if (!response.ok) throw new Error(`account ${response.status}`);
+    renderAccount(await response.json());
+    showAccountStatus('info', '', false);
+  } catch {
+    // A failed refresh keeps what is already shown and says it may be out of date.
+    showAccountStatus('error', firstLoad ? "We couldn't load your account details." : 'Your account details may be out of date.', true);
+  }
+}
+
+function scheduleAccountRefresh() {
+  clearTimeout(accountRefresh);
+  accountRefresh = setTimeout(() => void loadAccount(), ACCOUNT_REFRESH_DELAY_MS);
+}
+
+function clearAccount() {
+  clearTimeout(accountRefresh);
+  el.accountSections.hidden = true;
+  showAccountStatus('info', '', false);
+  for (const card of [el.accountCard, el.requestsCard, el.paymentsCard, el.historyCard]) card.hidden = true;
+  for (const list of [el.accountFacts, el.requestsList, el.paymentsList, el.historyList]) list.replaceChildren();
 }
 
 function onCallbackSubmit(event) {
@@ -785,6 +986,7 @@ el.muteButton.addEventListener('click', onMute);
 el.doneButton.addEventListener('click', onDone);
 el.verifyForm.addEventListener('submit', (event) => void onVerifySubmit(event));
 el.callbackForm.addEventListener('submit', onCallbackSubmit);
+el.accountRetry.addEventListener('click', () => void loadAccount());
 el.accountToggle.addEventListener('click', () => setSidebarOpen(el.sidebar.dataset.open !== 'true'));
 el.sidebarClose.addEventListener('click', () => setSidebarOpen(false));
 el.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));

@@ -42,7 +42,7 @@ export const lookupCustomer = defineTool({
     'If the caller is not verified it refuses; then ask them to fill in that form. Never ask for those details aloud.',
   input,
   async handler(ctx, args) {
-    return ctx.source === 'verification_form' ? verifyFromForm(ctx, args) : verifiedAccountSummary(ctx);
+    return ctx.source === 'caller_page' ? verifyFromForm(ctx, args) : verifiedAccountSummary(ctx);
   },
 });
 
@@ -113,7 +113,7 @@ async function verifyFromForm(ctx: ToolContext, args: Input): Promise<ToolOutcom
     return {
       status: 'not_found',
       result: { ok: true, found: false, verified: false, attempts_left: attemptsLeft },
-      logSummary: { found: false, verified: false, mismatched_on: mismatched, attempts_left: attemptsLeft, source: 'verification_form' },
+      logSummary: { found: false, verified: false, mismatched_on: mismatched, attempts_left: attemptsLeft, source: 'caller_page' },
     };
   }
 
@@ -125,7 +125,7 @@ async function verifyFromForm(ctx: ToolContext, args: Input): Promise<ToolOutcom
     status: 'ok',
     // Goes back to the verified caller's own screen, so their name and company are fine to show there.
     result: { ok: true, found: true, verified: true, customer_id: row.customer_id, company_name: row.company_name, contact_name: row.contact_name },
-    logSummary: { found: true, verified: true, customer_id: row.customer_id, verification: bind, source: 'verification_form' },
+    logSummary: { found: true, verified: true, customer_id: row.customer_id, verification: bind, source: 'caller_page' },
   };
 }
 

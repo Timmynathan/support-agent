@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import { verifyCaller, type VerificationForm } from '../mcp/verifyCaller.js';
+import { accountOverview, verifyCaller, type VerificationForm } from '../mcp/verifyCaller.js';
 import { CONVERSATION_ID_PATTERN } from '../shared/domain.js';
 import { HttpError, sendJson } from './httpUtil.js';
 import { getConversation } from './registry.js';
@@ -47,4 +47,16 @@ export async function verifyConversation(res: ServerResponse, conversationId: st
     message: MESSAGES[result.reason],
     attempts_left: result.attempts_left,
   });
+}
+
+// The verified caller's account panel. Same rule as verification: a live call on this server
+// only, and the tool itself refuses unless that call is verified.
+export async function accountPanel(res: ServerResponse, conversationId: string): Promise<void> {
+  if (!CONVERSATION_ID_PATTERN.test(conversationId)) throw new HttpError(400, 'invalid conversation id');
+  const conversation = getConversation(conversationId);
+  if (!conversation) throw new HttpError(404, 'no live call with that id');
+  const overview = await accountOverview(conversationId, conversation.channel);
+  if (overview.status === 'not_verified') throw new HttpError(403, 'verify first');
+  if (overview.status === 'unavailable') throw new HttpError(503, "We couldn't load your account just now.");
+  sendJson(res, 200, overview.data);
 }

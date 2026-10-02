@@ -9,7 +9,7 @@ import { endConversation, getOrStartConversation } from '../server/registry.js';
 import { HttpError, parseJsonObject, readBody, sendJson } from '../server/httpUtil.js';
 import { verifyBearer, verifyWebhookSignature } from './auth.js';
 import { normalizeSpokenReferences, speakableReferences } from './transcript.js';
-import { readVerificationForm, verifyConversation } from '../server/verification.js';
+import { accountPanel, readVerificationForm, verifyConversation } from '../server/verification.js';
 
 // Vapi is the voice layer only: speech to text, text to speech, call handling. Every support
 // decision is made by the agent behind these routes. Vapi calls:
@@ -134,6 +134,13 @@ async function verifyCall(req: IncomingMessage, res: ServerResponse): Promise<vo
   await verifyConversation(res, `vapi-${callId}`, readVerificationForm(body));
 }
 
+// The verified caller's account panel for this call.
+async function accountForCall(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = parseJsonObject(await readBody(req));
+  const callId = typeof body.call_id === 'string' ? body.call_id : '';
+  await accountPanel(res, `vapi-${callId}`);
+}
+
 function completion(id: string, content: string) {
   return {
     id,
@@ -229,6 +236,7 @@ export function routeVoice(req: IncomingMessage, res: ServerResponse): Promise<v
   if (req.method === 'POST' && path === '/vapi/chat/completions') return chatCompletions(req, res);
   if (req.method === 'POST' && path === '/vapi/webhook') return webhook(req, res);
   if (req.method === 'POST' && path === '/vapi/verify') return verifyCall(req, res);
+  if (req.method === 'POST' && path === '/vapi/account') return accountForCall(req, res);
   if (req.method === 'GET' && path === '/config.json') return Promise.resolve().then(() => widgetConfig(res));
   if (req.method === 'GET' && path === '/health') return Promise.resolve().then(() => sendJson(res, 200, { ok: true }));
   const entry = req.method === 'GET' ? STATIC_FILES[path] : undefined;

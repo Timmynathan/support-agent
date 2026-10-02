@@ -1,6 +1,7 @@
 import type { Channel } from '../shared/domain.js';
 import type { ToolContext } from './context.js';
 import { runLogged } from './toolLog.js';
+import { customerOverview } from './tools/customerOverview.js';
 import { lookupCustomer } from './tools/lookupCustomer.js';
 
 // The secure verification form, run through the same lookup_customer tool code as everything
@@ -17,7 +18,7 @@ export type VerificationResult =
   | { verified: false; reason: 'mismatch' | 'too_many_attempts' | 'missing_fields' | 'already_verified_as_another' | 'unavailable'; attempts_left: number | null };
 
 export async function verifyCaller(conversationId: string, channel: Channel, form: VerificationForm): Promise<VerificationResult> {
-  const ctx: ToolContext = { conversationId, channel, source: 'verification_form' };
+  const ctx: ToolContext = { conversationId, channel, source: 'caller_page' };
   const input = { customer_id: form.customer_id, contact_name: form.full_name, email: form.email };
   const outcome = await runLogged(ctx, lookupCustomer, input, () => lookupCustomer.run(ctx, input));
   const result = outcome.result as Record<string, any>;
@@ -31,4 +32,14 @@ export async function verifyCaller(conversationId: string, channel: Channel, for
     return { verified: false, reason, attempts_left: reason === 'too_many_attempts' ? 0 : null };
   }
   return { verified: false, reason: 'unavailable', attempts_left: null };
+}
+
+// The caller's account panel, through the customer_overview tool (logged like any tool call).
+// Says plainly when the call isn't verified or the records can't be read.
+export async function accountOverview(conversationId: string, channel: Channel): Promise<{ status: 'ok' | 'not_verified' | 'unavailable'; data?: Record<string, unknown> }> {
+  const ctx: ToolContext = { conversationId, channel, source: 'caller_page' };
+  const outcome = await runLogged(ctx, customerOverview, {}, () => customerOverview.run(ctx, {}));
+  if (outcome.status === 'ok') return { status: 'ok', data: outcome.result };
+  if ((outcome.result as Record<string, unknown>).reason === 'verification_required') return { status: 'not_verified' };
+  return { status: 'unavailable' };
 }

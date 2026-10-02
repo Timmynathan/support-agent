@@ -6,10 +6,10 @@ import { CHANNELS, CONVERSATION_ID_PATTERN, type Channel } from '../shared/domai
 export interface ToolContext {
   conversationId: string;
   channel: Channel;
-  // Who is calling the tool. 'verification_form' is set only by server code handling the
-  // secure form the caller types into; the MCP server the agent talks to is always 'agent',
-  // so the model can never present itself as the form.
-  source: 'agent' | 'verification_form';
+  // Who is calling the tool. 'caller_page' is set only by server code acting for the caller's
+  // own screen (the verification form, the account panel); the MCP server the agent talks to is
+  // always 'agent', so the model can never present itself as the caller's page.
+  source: 'agent' | 'caller_page';
 }
 
 export function contextFromEnv(env: NodeJS.ProcessEnv = process.env): ToolContext {

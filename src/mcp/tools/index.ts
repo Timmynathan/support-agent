@@ -1,5 +1,6 @@
 import type { Tool } from '../tool.js';
 import { createEscalation } from './createEscalation.js';
+import { customerOverview } from './customerOverview.js';
 import { createSupportTicket } from './createSupportTicket.js';
 import { logConversationEvent } from './logConversationEvent.js';
 import { lookupCustomer } from './lookupCustomer.js';
@@ -15,4 +16,5 @@ export const TOOLS: readonly Tool[] = [
   createSupportTicket,
   createEscalation,
   logConversationEvent,
+  customerOverview,
 ];

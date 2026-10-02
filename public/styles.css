@@ -1108,6 +1108,163 @@ body[data-in-call='true'] .topics {
   font-weight: var(--font-weight-semibold);
 }
 
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.account-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-size-xs);
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  min-width: 0;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  padding: var(--space-2) 0;
+  border-top: var(--border-width) solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.row-head .ref-chip {
+  margin: 0;
+}
+
+.row-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.row-meta,
+.row-detail {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  overflow-wrap: anywhere;
+}
+
+.row-amount {
+  margin-left: auto;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status is a word on a tinted pill; the word carries the meaning, never the colour alone. */
+.status-pill {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.status-pill[data-tone='attention'] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+}
+
+.status-pill[data-tone='problem'] {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.status-pill[data-tone='done'] {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.history summary {
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.history summary:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-width);
+  border-radius: var(--radius-sm);
+}
+
+.mini-log {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--font-size-2xs);
+}
+
+.mini-log b {
+  display: block;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mini-log p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .help-list {
   margin: 0;
   padding-left: var(--space-4);

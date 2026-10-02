@@ -77,7 +77,8 @@ export class AgentSession {
         tools: [],
         allowedTools: RELAYPAY_TOOLS.map(agentToolName),
         // Hidden, not just refused: a tool the model can see but not use gets tried anyway.
-        disallowedTools: [agentToolName('log_conversation_event')],
+        // customer_overview serves the caller's own screen and refuses the agent anyway.
+        disallowedTools: [agentToolName('log_conversation_event'), agentToolName('customer_overview')],
         permissionMode: 'dontAsk',
         settingSources: [],
         // Only the RelayPay server. Without this, a Claude process running under a developer's
