@@ -1,5 +1,31 @@
 import { db, must, mustRow } from '../shared/db.js';
 import type { ToolContext } from './context.js';
+import { refused, type ToolOutcome } from './tool.js';
+
+// No account, transaction or payout detail of any kind is released before the caller has
+// verified through the secure form (product decision, 2 Oct: this replaces the kickoff's
+// "anyone with a reference gets the customer-safe status").
+export function verificationRequired(): ToolOutcome {
+  return refused(
+    'verification_required',
+    'The caller is not verified, so no account, transaction or payout details can be shared. Ask them to fill in ' +
+      'their customer ID, full name and email in the verification form on screen (set ask_to_type to verification). ' +
+      'Do not ask for these details aloud, and do not say whether the reference exists.',
+  );
+}
+
+// Said for a reference that doesn't exist AND for one that belongs to someone else, so a caller
+// can't tell the two apart (or learn which references are real).
+export function notOnThisAccount(kind: 'transaction' | 'payout'): ToolOutcome {
+  return {
+    status: 'not_found',
+    result: {
+      ok: true,
+      found: false,
+      message_for_agent: `No ${kind} with that reference is on the caller's account. Read the reference back and ask them to confirm it; do not guess a status.`,
+    },
+  };
+}
 
 const ensuredConversations = new Set<string>();
 

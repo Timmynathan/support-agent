@@ -6,6 +6,10 @@ import { CHANNELS, CONVERSATION_ID_PATTERN, type Channel } from '../shared/domai
 export interface ToolContext {
   conversationId: string;
   channel: Channel;
+  // Who is calling the tool. 'verification_form' is set only by server code handling the
+  // secure form the caller types into; the MCP server the agent talks to is always 'agent',
+  // so the model can never present itself as the form.
+  source: 'agent' | 'verification_form';
 }
 
 export function contextFromEnv(env: NodeJS.ProcessEnv = process.env): ToolContext {
@@ -17,7 +21,7 @@ export function contextFromEnv(env: NodeJS.ProcessEnv = process.env): ToolContex
   if (!isChannel(channel)) {
     throw new Error(`MCP_CHANNEL must be one of ${CHANNELS.join(', ')}`);
   }
-  return { conversationId, channel };
+  return { conversationId, channel, source: 'agent' };
 }
 
 function isChannel(value: string): value is Channel {

@@ -8,7 +8,7 @@ import { buildRetriever, type RetrievalHit } from '../knowledge/retrieve.js';
 import * as log from './conversationLog.js';
 import { normalizeSpokenReferences } from '../voice/transcript.js';
 import { closingLine, withoutEndCallPhrase } from './closing.js';
-import { composeTurnMessage, TurnOutput, type AnswerType } from './prompt.js';
+import { composeTurnMessage, TurnOutput, type AnswerType, type CallerVerification } from './prompt.js';
 import { AgentSession, type SdkTurn, type ToolEvent, type TurnHooks } from './session.js';
 import { StructuredSpeechParser } from './speechStream.js';
 import { detectTriggers, escalationCategory, type TriggerHit } from './triggers.js';
@@ -95,6 +95,8 @@ export class Conversation {
   private lastCumulativeApiMs = 0;
   private escalationRequired = false;
   private escalationCreated = false;
+  // Set by the secure verification form (server code), never by the model.
+  private verifiedCaller: CallerVerification | null = null;
   // "Anything else?" is owed: an earlier reply finished something but ended on its own question.
   private followUpDeferred = false;
   // Contact details the open escalation still lacks, from create_escalation's latest result.
@@ -137,6 +139,11 @@ export class Conversation {
     const run = this.queue.then(() => this.runTurn(input));
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  // The verification form succeeded for this conversation (the database binding is already done).
+  markVerified(caller: CallerVerification): void {
+    this.verifiedCaller = caller;
   }
 
   // The caller spoke over the agent or hung up mid-answer: stop generating, so the next turn
@@ -220,7 +227,7 @@ export class Conversation {
 
     let sdkTurn: SdkTurn | 'timeout';
     try {
-      sdkTurn = await withDeadline(this.session.ask(composeTurnMessage(text, hits, triggers, this.previousReplyUnheard), hooks), TURN_DEADLINE_MS);
+      sdkTurn = await withDeadline(this.session.ask(composeTurnMessage(text, hits, triggers, this.previousReplyUnheard, this.verifiedCaller), hooks), TURN_DEADLINE_MS);
     } catch (error) {
       return this.failTurn(turnId, turnIndex, startedAt, speaker, LINES.failure, 'agent_unavailable', error);
     }

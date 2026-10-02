@@ -4,6 +4,7 @@ import { CONVERSATION_ID_PATTERN } from '../shared/domain.js';
 import { AGENT_MODEL } from '../agent/session.js';
 import { endConversation, getConversation, getOrStartConversation, openConversationCount } from './registry.js';
 import { HttpError, parseJsonObject, readBody, sendJson } from './httpUtil.js';
+import { readVerificationForm, verifyConversation } from './verification.js';
 
 // The plain-text channel used for testing without voice. It has no caller authentication, so
 // it is only ever served on the loopback-only listener, never through the tunnel.
@@ -24,6 +25,12 @@ async function chat(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!conversation) throw new HttpError(404, 'no open conversation with that id; omit conversation_id to start one');
   }
   sendJson(res, 200, await conversation.handle({ text: message }));
+}
+
+// The verification form for the text test channel (the voice page uses /vapi/verify).
+async function verify(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = parseJsonObject(await readBody(req));
+  await verifyConversation(res, typeof body.conversation_id === 'string' ? body.conversation_id : '', readVerificationForm(body));
 }
 
 async function start(res: ServerResponse): Promise<void> {
@@ -52,6 +59,7 @@ export function routeText(req: IncomingMessage, res: ServerResponse): Promise<vo
   const route = `${req.method} ${req.url}`;
   if (route === 'POST /chat') return chat(req, res);
   if (route === 'POST /chat/start') return start(res);
+  if (route === 'POST /chat/verify') return verify(req, res);
   if (route === 'POST /chat/end') return end(req, res);
   if (route === 'GET /health') return Promise.resolve(sendJson(res, 200, { ok: true, model: AGENT_MODEL, open_conversations: openConversationCount() }));
   return null;

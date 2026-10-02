@@ -12,13 +12,14 @@ export const CLOSING_LINES = {
   // Emails and customer IDs are typed, not spoken: speech-to-text garbles both.
   type_email: 'Please type your email in the chat box below.',
   type_customer_id: 'Please type your customer ID in the chat box below.',
+  type_verification: 'Please fill in your customer ID, full name and email in the verification form on screen.',
   // An escalation nobody can call back on is not finished, so the caller is asked until it is.
   contact_name_email: 'Before we finish, our specialist needs a way to reach you. Could you tell me your name? And please type your email in the chat box below.',
   contact_email: 'Before we finish, our specialist needs a way to reach you. Please type your email in the chat box below.',
   contact_name: 'Before we finish, our specialist needs a name to ask for. Could you tell me your name?',
 } as const;
 
-export const ASK_TO_TYPE = ['none', 'email', 'customer_id'] as const;
+export const ASK_TO_TYPE = ['none', 'email', 'customer_id', 'verification'] as const;
 export type AskToType = (typeof ASK_TO_TYPE)[number];
 
 export interface ClosingInput {
@@ -44,7 +45,7 @@ export interface Closing {
 }
 
 const ENDS_WITH_QUESTION = /\?\s*$/;
-const ASKS_TO_TYPE = /\btype your\b/i;
+const ASKS_TO_TYPE = /\btype your\b|\bverification form\b/i;
 const ASKS_NAME = /\byour name\b/i;
 // An offer phrased without a question mark: "I can raise this with the team if you'd like."
 const OFFER = /\b(if you'?d like|if you would like|if you want|would you like|do you want|want me to|shall i|should i|let me know)\b/i;
