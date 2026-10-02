@@ -2,6 +2,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Channel } from '../shared/domain.js';
 import { fromRoot } from '../shared/paths.js';
+import { maskEmail } from '../mcp/redact.js';
 import { loadKnowledgeBase } from '../knowledge/knowledgeBase.js';
 import { buildRetriever, type RetrievalHit } from '../knowledge/retrieve.js';
 import * as log from './conversationLog.js';
@@ -44,7 +45,7 @@ function isSafeSocialReply(text: string): boolean {
 
 const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const LONG_RESPONSE_WORDS = 80;
-const AGENT_FALLBACK_LOG = fromRoot('logs', 'agent-fallback.jsonl');
+export const AGENT_FALLBACK_LOG = fromRoot('logs', 'agent-fallback.jsonl');
 
 const retriever = buildRetriever(loadKnowledgeBase());
 
@@ -125,7 +126,7 @@ export class Conversation {
       await log.startConversation(this.id, this.channel, this.callerIdentifier);
       return true;
     } catch (error) {
-      await writeFallback({ stage: 'start_conversation', conversation_id: this.id, error: describe(error) });
+      await writeFallback({ stage: 'start_conversation', conversation_id: this.id, channel: this.channel, caller_identifier: this.callerIdentifier, error: describe(error) });
       return false;
     }
   }
@@ -184,7 +185,15 @@ export class Conversation {
       turnId = await log.startTurn(this.id, turnIndex, input.rawTranscript ?? text);
     } catch (error) {
       // Fail closed, like the MCP tools: an answer that can't be logged isn't given.
-      await writeFallback({ stage: 'start_turn', conversation_id: this.id, turn_index: turnIndex, error: describe(error) });
+      // What the caller said and what they were told, so the turn can be rebuilt later.
+      await writeFallback({
+        stage: 'start_turn',
+        conversation_id: this.id,
+        turn_index: turnIndex,
+        user_transcript: input.rawTranscript ?? text,
+        assistant_response: LINES.failure,
+        error: describe(error),
+      });
       speaker.say(LINES.failure);
       return this.errorReply(turnIndex, startedAt, speaker, LINES.failure, ['log_unavailable']);
     }
@@ -634,11 +643,15 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'
 }
 
 async function writeFallback(entry: Record<string, unknown>): Promise<void> {
+  const line = JSON.stringify({ at: new Date().toISOString(), ...entry });
+  // Also to stderr: a host whose disk is wiped on every deploy keeps process output. Emails in
+  // the caller's words are masked there; the file keeps the full record for replay.
+  process.stderr.write(`agent fallback record: ${line.replace(EMAIL_PATTERN, (email) => maskEmail(email))}\n`);
   try {
     await mkdir(dirname(AGENT_FALLBACK_LOG), { recursive: true });
-    await appendFile(AGENT_FALLBACK_LOG, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`, 'utf8');
+    await appendFile(AGENT_FALLBACK_LOG, `${line}\n`, 'utf8');
   } catch (error) {
-    process.stderr.write(`agent log lost (${describe(error)}): ${JSON.stringify(entry)}\n`);
+    process.stderr.write(`agent fallback file not written (${describe(error)})\n`);
   }
 }
 

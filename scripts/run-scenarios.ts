@@ -167,12 +167,21 @@ function printScenario(scenario: Scenario, replies: any[], rows: Awaited<ReturnT
 function loggingProblems(id: string, replies: any[], rows: Rows): string[] {
   const conversation = rows.conversation as any;
   const loggedTools = toolsUsed(replies).filter((t) => t.outcome !== 'rejected').length;
+  // Every turn individually: its reply stored, and its outcome recorded as a decision or, for a
+  // turn that failed, as an error.
+  const perTurn = replies.flatMap((reply, i): Array<[boolean, string]> => [
+    [(rows.turns as any[]).some((t) => t.turn_index === i && t.answer_type !== null), `${id}: turn ${i} has no stored reply`],
+    [
+      (rows.events as any[]).some((e) => (e.event_type === 'decision' || e.event_type === 'error') && e.metadata?.turn_index === i),
+      `${id}: turn ${i} has no decision or error event`,
+    ],
+  ]);
   return problems(
     [conversation.final_status !== 'in_progress', `${id}: conversation not closed`],
     [rows.turns.length === replies.length, `${id}: ${rows.turns.length} turn rows for ${replies.length} replies`],
     [rows.retrievals.length === replies.length, `${id}: ${rows.retrievals.length} retrieval rows for ${replies.length} turns`],
     [rows.toolCalls.length === loggedTools, `${id}: ${rows.toolCalls.length} tool-call rows for ${loggedTools} tool calls`],
-    [rows.events.some((e: any) => e.event_type === 'decision'), `${id}: no decision event`],
+    ...perTurn,
   );
 }
 

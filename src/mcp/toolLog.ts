@@ -111,12 +111,14 @@ async function writeFallback(entry: FallbackEntry): Promise<void> {
     finish_error: entry.finishError ?? null,
     duration_ms: entry.durationMs,
   });
+  // Also to stderr (stdout carries the MCP protocol): a host whose disk is wiped on every deploy
+  // keeps process output, so the record survives even if the file below does not.
+  process.stderr.write(`tool-call fallback record: ${line}\n`);
   try {
     await mkdir(dirname(FALLBACK_LOG_PATH), { recursive: true });
     await appendFile(FALLBACK_LOG_PATH, `${line}\n`, 'utf8');
   } catch (error) {
-    // stdout carries the MCP protocol, so stderr is the only remaining place to say this.
-    process.stderr.write(`tool-call log lost (${describe(error)}): ${line}\n`);
+    process.stderr.write(`tool-call fallback file not written (${describe(error)})\n`);
   }
 }
 

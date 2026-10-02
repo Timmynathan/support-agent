@@ -19,7 +19,9 @@
     "voice-checks": "tsx scripts/voice-checks.ts",
     "vapi-setup": "tsx --env-file=.env scripts/vapi-setup.ts",
     "voice-sim": "tsx --env-file=.env scripts/voice-sim.ts",
-    "bake-face": "node scripts/bake-face.mjs"
+    "bake-face": "node scripts/bake-face.mjs",
+    "sweep": "tsx --env-file=.env scripts/sweep-stale.ts",
+    "replay-fallback": "tsx --env-file=.env scripts/replay-fallback.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.284",

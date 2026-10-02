@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { AGENT_MODEL } from '../agent/session.js';
 import { routeVoice } from '../voice/vapiRoutes.js';
 import { endAll } from './registry.js';
+import { sweepStaleConversations } from './staleSweep.js';
 import { handleError, HttpError } from './httpUtil.js';
 import { routeText } from './textRoutes.js';
 
@@ -38,6 +39,20 @@ function listen(name: string, host: string, port: number, router: Router): void 
 listen('text channel', TEXT_HOST, TEXT_PORT, routeText);
 listen('voice channel', VOICE_HOST, VOICE_PORT, routeVoice);
 process.stdout.write(`agent model ${AGENT_MODEL}\n`);
+
+// Conversations left open by a restart (this one included) or a lost end signal get a final
+// status: now, and every 15 minutes while the server runs.
+const SWEEP_EVERY_MS = 15 * 60 * 1000;
+async function sweep(): Promise<void> {
+  try {
+    const { closed } = await sweepStaleConversations();
+    for (const c of closed) process.stdout.write(`swept ${c.conversation_id} → ${c.final_status} (idle since ${c.idle_since})\n`);
+  } catch (error) {
+    process.stderr.write(`stale-conversation sweep failed: ${String(error)}\n`);
+  }
+}
+void sweep();
+setInterval(() => void sweep(), SWEEP_EVERY_MS).unref();
 
 async function shutdown(): Promise<void> {
   await endAll('server_shutdown');

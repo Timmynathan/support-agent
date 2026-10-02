@@ -2,23 +2,9 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { contextFromEnv } from './context.js';
-import { failure, type Tool } from './tool.js';
+import { failure } from './tool.js';
 import { runLogged } from './toolLog.js';
-import { createEscalation } from './tools/createEscalation.js';
-import { createSupportTicket } from './tools/createSupportTicket.js';
-import { logConversationEvent } from './tools/logConversationEvent.js';
-import { lookupCustomer } from './tools/lookupCustomer.js';
-import { lookupPayout } from './tools/lookupPayout.js';
-import { lookupTransaction } from './tools/lookupTransaction.js';
-
-const TOOLS: readonly Tool[] = [
-  lookupCustomer,
-  lookupTransaction,
-  lookupPayout,
-  createSupportTicket,
-  createEscalation,
-  logConversationEvent,
-];
+import { TOOLS } from './tools/index.js';
 
 const ctx = contextFromEnv();
 const toolsByName = new Map(TOOLS.map((tool) => [tool.name, tool]));
