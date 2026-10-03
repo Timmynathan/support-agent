@@ -124,6 +124,11 @@ let verifiedCustomer = null;
 // Details typed before the call connected, sent as soon as it does.
 let pendingVerification = null;
 let verifying = false;
+// Messages for Relay (typed questions, the "verified" notice), held until it isn't speaking.
+const toRelay = [];
+// When the call is started from the verification form, the greeting says the details are being
+// checked instead of asking for them.
+const FORM_GREETING = "Hello, you've reached RelayPay support. Thanks for filling in your details, I'm checking them now.";
 let doneMutedMic = false;
 const level = { mic: 0, agent: 0 };
 
@@ -435,7 +440,7 @@ async function onVerifySubmit(event) {
   // Verification belongs to a call: start one, and send the details once it connects.
   pendingVerification = form;
   showFormMessage(el.verifyMessage, 'info', 'Starting a call to verify you…');
-  if (!STATES[state].inCall) await startCall();
+  if (!STATES[state].inCall) await startCall({ firstMessage: FORM_GREETING });
 }
 
 function flushPendingVerification() {
@@ -495,7 +500,7 @@ function onVerified(customer) {
   addDivider(`Verified as ${customer.contact_name}, ${customer.company_name}`);
   void loadAccount();
   // Tell Relay, so it carries on with what the caller asked.
-  vapi.send({ type: 'add-message', message: { role: 'user', content: "I've filled in the verification form." }, triggerResponseEnabled: true });
+  tellRelay("I've filled in the verification form.");
   chat.awaitingReply = true;
   if (state === 'listening') setState('thinking');
   if (!WIDE_SCREEN.matches) setTimeout(() => setSidebarOpen(false), ATTENTION_MS / 2);
@@ -504,6 +509,7 @@ function onVerified(customer) {
 // Verification lasts for one call; the next call starts unverified, with nothing left on screen.
 function resetAccountPanel() {
   callId = null;
+  toRelay.length = 0;
   verifiedCustomer = null;
   pendingVerification = null;
   el.verifyForm.reset();
@@ -808,8 +814,19 @@ function askTyped(question) {
   chat.callerBubble = null;
   chat.relayBubble = null;
   chat.awaitingReply = true;
-  vapi.send({ type: 'add-message', message: { role: 'user', content: question }, triggerResponseEnabled: true });
+  tellRelay(question);
   if (state === 'listening') setState('thinking');
+}
+
+function tellRelay(content) {
+  toRelay.push(content);
+  flushToRelay();
+}
+
+// Sends what's waiting once Relay has finished its greeting and isn't mid-sentence.
+function flushToRelay() {
+  if (!vapi || !LIVE_STATES.has(state) || !greetingDone || state === 'speaking') return;
+  while (toRelay.length) vapi.send({ type: 'add-message', message: { role: 'user', content: toRelay.shift() }, triggerResponseEnabled: true });
 }
 
 function flushPendingQuestion() {
@@ -840,6 +857,7 @@ function attachEvents() {
     greetingFallback = setTimeout(() => {
       greetingDone = true;
       flushPendingQuestion();
+      flushToRelay();
     }, GREETING_FALLBACK_MS);
   });
   vapi.on('call-end', onCallEnded);
@@ -854,6 +872,7 @@ function attachEvents() {
       clearTimeout(greetingFallback);
       flushPendingQuestion();
     }
+    flushToRelay();
   });
   vapi.on('volume-level', (value) => {
     level.agent = value;
@@ -910,7 +929,7 @@ function onCallEnded() {
   );
 }
 
-async function startCall() {
+async function startCall(overrides) {
   clearError();
   endedReason = null;
   setState('connecting');
@@ -921,7 +940,7 @@ async function startCall() {
     el.micHint.hidden = false;
   }, SLOW_CONNECT_MS);
   try {
-    const call = await vapi.start(assistantId);
+    const call = await vapi.start(assistantId, overrides);
     callId = call?.id ?? null;
     flushPendingVerification();
   } catch (error) {
